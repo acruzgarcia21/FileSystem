@@ -186,10 +186,11 @@ What needs to be submitted (via GitHub):
 	* The github link for your group submission.
 	* The plan/approach for each phase and changes made
 	* A description of your file system
-	* A list of exactly which shell commands work and don't work or limitations
+	* **A table of exactly which shell commands work and don't work or limitations**
 	* Issues you had
 	* Details of how each of your functions work
- 	* A detailed table of who worked on what, down to the individual function level
+ 	* **A detailed table of who worked on what, down to the individual function level**
 	* Screen shots showing each of the commands listed above
 * 	Your volume file (limit 10MB)
 *  There will also be an INDIVIDUAL report (form) to complete.
+
