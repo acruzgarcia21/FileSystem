@@ -1,7 +1,7 @@
 /**************************************************************
 * Class::  CSC-415-02 Fall 2025
-* Name:: Evan Caplinger, 
-* Student IDs:: 924990024, 
+* Name:: Evan Caplinger, Ronin Lombardino
+* Student IDs:: 924990024, 924363164
 * GitHub-Name:: RookAteMySSD
 * Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System
@@ -28,8 +28,14 @@ int initFAT(vcb* pVCB);
 // load FAT into memory
 int loadFAT(vcb* pVCB);
 
+// allocate blocks of given size
+u_int32_t allocateBlocks(u_int32_t numBlocks);
+
 // free blocks from startBlock to EOF
 int freeBlocks(uint32_t startBlock);
+
+// resize allocated blocks
+int resizeBlocks(uint32_t startBlock, int newSize);
 
 // get blocknum of certain offset
 uint32_t getBlockOfFile(uint32_t startBlock, uint32_t offset);

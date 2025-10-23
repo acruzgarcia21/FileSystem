@@ -1,7 +1,7 @@
 /**************************************************************
 * Class::  CSC-415-02 Fall 2025
-* Name:: Evan Caplinger, 
-* Student IDs:: 924990024, 
+* Name:: Evan Caplinger, Ronin Lombardino 
+* Student IDs:: 924990024, 924363164
 * GitHub-Name:: RookAteMySSD
 * Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System
@@ -17,6 +17,7 @@
 #include <stddef.h>
 
 uint32_t* fat = NULL;
+vcb* global_pVCB = NULL;
 
 int initFAT(vcb* pVCB) {
     // copy over values from VCB
@@ -41,6 +42,9 @@ int initFAT(vcb* pVCB) {
     pVCB->fatNumBlocks = fatNumBlocks;
     pVCB->firstFreeBlock = fatNumBlocks + 1;
     pVCB->lastFreeBlock = numBlocks - 1;
+
+    //store the VCB pointer globally
+    global_pVCB = pVCB;
 
     // set all other blocks to point to the next block
     for (int i = fatNumBlocks + 1; i < numBlocks - 1; i++) {
@@ -82,9 +86,82 @@ int loadFAT(vcb* pVCB) {
         return -1;
     }
 
+    //store the VCB pointer globally
+    global_pVCB = pVCB;
+
     return 0;
 }
 
-int freeBlocks(uint32_t startBlock, vcb* pVCB) {
+u_int32_t allocateBlocks(u_int32_t numBlocks) {
+
+
+    uint32_t currentBlock = global_pVCB->firstFreeBlock;
+    
+    //iterate through the FAT form the head
+    for (int i = 0; i < numBlocks; i++) {
+        //if the current block is our EOF sentinel, return EOF sentinel
+        if (currentBlock == FAT_EOF) {
+            return FAT_EOF;
+        }
+        currentBlock = fat[currentBlock];
+    }
+
+    //store the start block as an index
+    u_int32_t startBlock = global_pVCB->firstFreeBlock;
+    //set the index of the currentBlock's next block to the FreeBlock start
+    global_pVCB->firstFreeBlock = fat[currentBlock];
+    //set the currentBlock to EOF
+    fat[currentBlock] = FAT_EOF;
+    //return the start block index
+    return startBlock;
+    
     return 0;
+}
+
+int freeBlocks(uint32_t startBlock) {
+    return 0;
+}
+
+int resizeBlocks(uint32_t startBlock, int newSize) {
+
+    // if the size is 0, call freeBlocks with startBlock and return
+    if (newSize == 0) {
+        return freeBlocks(startBlock);
+    }
+
+    u_int32_t currentBlock = startBlock;
+    //iterate through the FAT with the start block until we hit EOF or size
+    for (int i = 0; i < newSize; i++) {
+        //if we hit EOF, break
+        if (fat[currentBlock] == FAT_EOF) {
+            //if we hit EOF first, call allocateBlocks with the diffrence and append it to the end
+            fat[currentBlock] = allocateBlocks(newSize - i);
+            if (fat[currentBlock] == FAT_EOF) {
+                return FAT_EOF;
+            }
+            return 0;
+        }
+        currentBlock = fat[currentBlock];
+    }
+
+    //if we hit size first, call freeBlocks on the next block after size and update the EOF sentinel
+    freeBlocks(fat[currentBlock]);
+    currentBlock = FAT_EOF;
+    return 0;
+}
+
+uint32_t getBlockOfFile(uint32_t startBlock, uint32_t offset) {
+    //set currentBlock to startBlock
+    uint32_t currentBlock = startBlock;
+
+    //iterate through the FAT offset times
+    for (uint32_t i = 0; i < offset; i++) {
+        //if we hit EOF, return EOF
+        if (fat[currentBlock] == FAT_EOF) {
+            return FAT_EOF;
+        }
+        currentBlock = fat[currentBlock];
+    }
+    //return the currentBlock
+    return currentBlock;
 }
