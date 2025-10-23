@@ -15,6 +15,9 @@
 #ifndef __FSFREESPACE_H__
 #define __FSFREESPACE_H__
 
+#define FAT_RESERVED 0xffffffff
+#define FAT_EOF 0xfffffffe
+
 #include <stdint.h>
 
 #include "fsVCB.h"
