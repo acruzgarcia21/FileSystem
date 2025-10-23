@@ -51,12 +51,12 @@ int initFAT(vcb* pVCB) {
     fat[numBlocks - 1] = FAT_EOF;
 
     // reserve the rest of the blocks in the FAT
-    for (int i = numBlocks; i < fatNumBlocks * blockSize; i++) {
+    for (int i = numBlocks; i < fatNumBlocks * blockSize / sizeof(uint32_t); i++) {
         fat[i] = FAT_RESERVED;
     }
 
     // write FAT to disk
-    uint64_t result = LBAwrite((void *)fat, fatNumBlocks, pVCB->fatStart);;
+    uint64_t result = LBAwrite((void *)fat, fatNumBlocks, pVCB->fatStart);
     if (result != 0) {
         return -1;
     }
