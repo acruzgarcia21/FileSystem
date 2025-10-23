@@ -1,9 +1,9 @@
 /**************************************************************
-* Class::  CSC-415-0# Spring 2024
-* Name::
-* Student IDs::
-* GitHub-Name::
-* Group-Name::
+* Class::  CSC-415-02 Fall 2025
+* Name:: Evan Caplinger, 
+* Student IDs:: 924990024, 
+* GitHub-Name:: RookAteMySSD
+* Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System
 *
 * File:: fsInit.c
