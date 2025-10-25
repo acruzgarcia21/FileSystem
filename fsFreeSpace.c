@@ -92,9 +92,7 @@ int loadFAT(vcb* pVCB) {
     return 0;
 }
 
-u_int32_t allocateBlocks(u_int32_t numBlocks) {
-
-
+uint32_t allocateBlocks(uint32_t numBlocks) {
     uint32_t currentBlock = global_pVCB->firstFreeBlock;
     
     //iterate through the FAT form the head
@@ -107,7 +105,7 @@ u_int32_t allocateBlocks(u_int32_t numBlocks) {
     }
 
     //store the start block as an index
-    u_int32_t startBlock = global_pVCB->firstFreeBlock;
+    uint32_t startBlock = global_pVCB->firstFreeBlock;
     //set the index of the currentBlock's next block to the FreeBlock start
     global_pVCB->firstFreeBlock = fat[currentBlock];
     //set the currentBlock to EOF
@@ -119,6 +117,28 @@ u_int32_t allocateBlocks(u_int32_t numBlocks) {
 }
 
 int freeBlocks(uint32_t startBlock) {
+    // ensure that fat is initialized (mounted)
+    if (global_pVCB == NULL || fat == NULL) {
+        return -1;
+    }
+
+    // add blocks from file to free block list
+    fat[global_pVCB->lastFreeBlock] = startBlock;
+
+    // find the end of the file we just freed
+    uint32_t fileEnd;
+    do {
+        fileEnd = fat[fileEnd];
+
+        // handle case where we run into reserved blocks
+        if (fat[fileEnd] == FAT_RESERVED) {
+            return -1;
+        }
+    } while (fat[fileEnd != FAT_EOF]);
+
+    // set new last free block in VCB
+    global_pVCB->lastFreeBlock = fileEnd;
+
     return 0;
 }
 
@@ -129,7 +149,7 @@ int resizeBlocks(uint32_t startBlock, int newSize) {
         return freeBlocks(startBlock);
     }
 
-    u_int32_t currentBlock = startBlock;
+    uint32_t currentBlock = startBlock;
     //iterate through the FAT with the start block until we hit EOF or size
     for (int i = 0; i < newSize; i++) {
         //if we hit EOF, break
