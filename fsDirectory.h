@@ -12,31 +12,35 @@
 *
 **************************************************************/
 
-#ifndef DS_DIRECTORY_H
-#define DS_DIRECTORY_H
+#ifndef FS_DIRECTORY_H
+#define FS_DIRECTORY_H
 
 #include <stdint.h>
+#include <stddef.h>
+#include <time.h>
+#include "fsLow.h"
 #include "fsFreeSpace.h"
 
 #define DE_NAME_MAX 48
 
+// Flag bit masks
+#define DE_IS_DIR 0x01  // 0000 0001 - directory
+#define DE_IS_USED 0x80 // 1000 0000 - used entry
+
 typedef struct 
 {
-    char name[DE_NAME_MAX];
-
-    int isUsed; // 0 is not used, 1 is used
-    int isDir;  // 0 is not a directory, 1 is a directory
-
+    char name[DE_NAME_MAX];    
+    uint32_t size;
+    uint32_t location; // Starting LBA
     uint32_t created;
     uint32_t accessed;
     uint32_t modified;
-    uint32_t size;
-    uint32_t location; // Starting LBA
+    uint8_t flags;
 } DE;
 
 // Initializer for root directory/any directory
-DE* createDir(int requestedEntries, const DE* parent, int blockSize);
+DE* createDir(int count, const DE* parent, int blockSize);
 
-int writeToDisk(const DE* dir, int blockSize);
+int writeDirToDisk(const DE* dir, int blockSize);
 
 #endif
