@@ -29,7 +29,7 @@ int initFAT(vcb* pVCB);
 int loadFAT(vcb* pVCB);
 
 // allocate blocks of given size
-u_int32_t allocateBlocks(u_int32_t numBlocks);
+uint32_t allocateBlocks(uint32_t numBlocks);
 
 // free blocks from startBlock to EOF
 int freeBlocks(uint32_t startBlock);

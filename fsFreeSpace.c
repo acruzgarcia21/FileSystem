@@ -166,7 +166,7 @@ int resizeBlocks(uint32_t startBlock, int newSize) {
 
     //if we hit size first, call freeBlocks on the next block after size and update the EOF sentinel
     freeBlocks(fat[currentBlock]);
-    currentBlock = FAT_EOF;
+    fat[currentBlock] = FAT_EOF;
     return 0;
 }
 
