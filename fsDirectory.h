@@ -40,9 +40,6 @@ typedef struct
 
 // Initializer for root directory/any directory
 DE* createDir(int count, const DE* parent, int blockSize);
-
-int writeDirToDisk(const DE* dir, int blockSize);
-
 // write a file to disk
 int writeFileToDisk(char* data, DE* entry);
 
