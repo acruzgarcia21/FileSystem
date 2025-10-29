@@ -24,11 +24,36 @@
 #include "fsLow.h"
 #include "mfs.h"
 
+#include "fsVCB.h"
+
 
 int initFileSystem (uint64_t numberOfBlocks, uint64_t blockSize)
 	{
 	printf ("Initializing File System with %ld blocks with a block size of %ld\n", numberOfBlocks, blockSize);
 	/* TODO: Add any code you need to initialize your file system. */
+
+	// get a pointer to the global vcb
+	vcb* ourVCB = _getGlobalVCB();
+
+	// read VCB into VCB struct via a buffer
+	char* vcbBuf = malloc(blockSize);
+	if (vcbBuf == NULL) {
+		perror("malloc");
+		return -1;
+	}
+
+	// copy data from buffer into vcb and free allocated buffer space
+	memcpy(ourVCB, vcbBuf, sizeof(vcb));
+	free(vcbBuf);
+	vcbBuf = NULL;
+
+	// check signature, initialize if incorrect
+	if (ourVCB->signature != FS_VCB_MAGIC) {
+		int r = initVCB(ourVCB, numberOfBlocks, blockSize);
+		if (r != 0) {
+			return r;
+		}
+	}
 
 	return 0;
 	}

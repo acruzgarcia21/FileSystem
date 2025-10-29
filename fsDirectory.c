@@ -26,6 +26,31 @@ int writeDirToDisk(const DE* dir, int blockSize)
     return (wrote == blocks) ? 0 : -1;
 }
 
+int writeFileToDisk(char* data, DE* entry) {
+    // get global VCB
+    vcb* globalVCB = _getGlobalVCB();
+    if (globalVCB == NULL) {
+        return -1;
+    }
+
+    // set up variables for writing
+    uint32_t bytesToWrite = entry->size;
+    uint32_t blocksToWrite = (bytesToWrite + globalVCB->blockSize - 1) / globalVCB->blockSize;
+
+    // write all blocks of file to disk
+    int r;  // contains result from LBAwrite
+    for (int i = 0; i < blocksToWrite; i++) {
+        r = LBAwrite(&data[i * globalVCB->blockSize],
+                     1,
+                     getBlockOfFile(entry->location, i));
+        if (r != 0) {   // abort on error
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 DE* createDir(int count, const DE* parent, int blockSize)
 {
     if(count < 2) count = 2; // need to have . and ..

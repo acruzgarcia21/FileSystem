@@ -18,10 +18,15 @@
 
 #include <stdint.h>
 
+#define FS_VCB_MAGIC 0x8BADBEEF
+#define FS_ROOT_SIZE 50
+
 /* a point of concern: we have been using uint32_t (or unsigned int) for block
 addressing and block size, but in initFileSystem these are uint64_t. worth asking
 bierman? -erc */
 typedef struct {
+    uint32_t signature;
+
     // volume characteristics
     uint32_t blockSize;
     uint32_t numBlocks;
@@ -32,6 +37,15 @@ typedef struct {
     uint32_t firstFreeBlock;
     uint32_t lastFreeBlock;
 
+    // root dir info
+    uint32_t rootStart;
+    uint32_t rootSize;
 } vcb;
+
+// returns a pointer to a global instance of the VCB
+vcb* _getGlobalVCB();
+
+// initialize the VCB
+int initVCB(vcb* pVCB, uint64_t numberOfBlocks, uint64_t blockSize);
 
 #endif

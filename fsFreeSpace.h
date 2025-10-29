@@ -19,6 +19,7 @@
 #define FAT_EOF 0xfffffffe
 
 #include <stdint.h>
+#include <fsDirectory.h>
 
 #include "fsVCB.h"
 
