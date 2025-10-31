@@ -1,7 +1,7 @@
 /**************************************************************
 * Class::  CSC-415-02 Fall 2025
-* Name:: Alejandro Cruz-Garcia
-* Student IDs:: 923799497
+* Name:: Alejandro Cruz-Garcia, Ronin Lombardino
+* Student IDs:: 923799497, 924363164
 * GitHub-Name:: RookAteMySSD
 * Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System
