@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 
 int writeFileToDisk(char* data, DE* entry) {
     // get global VCB
@@ -152,4 +153,10 @@ DE* createDir(int count, const DE* parent, int blockSize)
         return NULL;
     }
     return dir;
+}
+
+//Get the current time in secionds as a uint32_t
+uint32_t getCurrentTime() {
+    time_t now = time(NULL);
+    return (uint32_t)now;
 }

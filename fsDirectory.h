@@ -43,4 +43,6 @@ DE* createDir(int count, const DE* parent, int blockSize);
 // write a file to disk
 int writeFileToDisk(char* data, DE* entry);
 
+uint32_t getCurrentTime();
+
 #endif
