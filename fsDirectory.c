@@ -81,31 +81,6 @@ int writeFileToDisk(char* data, DE* entry) {
     return 0;
 }
 
-// int writeFileToDisk(char* data, DE* entry) {
-//     // get global VCB
-//     vcb* globalVCB = _getGlobalVCB();
-//     if (globalVCB == NULL) {
-//         return -1;
-//     }
-
-//     // set up variables for writing
-//     uint32_t bytesToWrite = entry->size;
-//     uint32_t blocksToWrite = (bytesToWrite + globalVCB->blockSize - 1) / globalVCB->blockSize;
-
-//     // write all blocks of file to disk
-//     int r;  // contains result from LBAwrite
-//     for (int i = 0; i < blocksToWrite; i++) {
-//         r = LBAwrite(&data[i * globalVCB->blockSize],
-//                      1,
-//                      getBlockOfFile(entry->location, i));
-//         if (r != 1) {   // abort on error
-//             return -1;
-//         }
-//     }
-
-//     return 0;
-// }
-
 /* 
 *  Builds a new directory table in RAM, reserves enough disk blocks via the FAT
 *  allocator, fills "." and "..", marks all remaining entries as unused (reserved capacity).

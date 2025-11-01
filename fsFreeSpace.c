@@ -41,7 +41,7 @@ int initFAT(vcb* pVCB) {
     }
 
     // set VCB values
-    pVCB->fatStart = 2;
+    pVCB->fatStart = 1;
     pVCB->fatNumBlocks = fatNumBlocks;
     pVCB->firstFreeBlock = fatNumBlocks + 1;
     pVCB->lastFreeBlock = numBlocks - 1;
