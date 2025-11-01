@@ -51,6 +51,7 @@ int initFileSystem (uint64_t numberOfBlocks, uint64_t blockSize)
 	if (ourVCB->signature != FS_VCB_MAGIC) {
 		int r = initVCB(ourVCB, numberOfBlocks, blockSize);
 		if (r != 0) {
+			printf("could not init vcb\n");
 			return r;
 		}
 	}

@@ -1,3 +1,6 @@
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "fsVCB.h"
 #include "fsFreeSpace.h"
 #include "fsDirectory.h"
@@ -19,12 +22,14 @@ int initVCB(vcb* pVCB, uint64_t numberOfBlocks, uint64_t blockSize) {
     // initialize freespace system
     int r = initFAT(pVCB);
     if (r != 0) {
+        printf("could not init fat\n");
         return r;
     }
 
     // initialize root directory entry
     DE* rootEntry = createDir(FS_ROOT_SIZE, NULL, pVCB->blockSize);
     if (rootEntry == NULL) {
+        printf("could not init root\n");
         return -1;
     }
     pVCB->rootStart = rootEntry->location;
@@ -35,7 +40,8 @@ int initVCB(vcb* pVCB, uint64_t numberOfBlocks, uint64_t blockSize) {
 
     // write vcb to disk at block 0
     r = LBAwrite(pVCB, 1, 0);
-    if (r != 0) {
+    if (r != 1) {
+        printf("could not write vcb\n");
         return -1;
     }
 

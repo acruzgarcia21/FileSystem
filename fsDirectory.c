@@ -19,67 +19,93 @@
 #include <stdio.h>
 #include <time.h>
 
+// int writeFileToDisk(char* data, DE* entry) {
+//     // get global VCB
+//     vcb* globalVCB = _getGlobalVCB();
+//     if (globalVCB == NULL || entry == NULL) return -1;
+
+//     // We'll use the block size defined by the file system
+//     uint32_t blockSize = globalVCB->blockSize;
+//     // Total bytes to write is based on the files actual size
+//     uint32_t bytesToWrite = entry->size;
+//     // Figure out how many blocks the file spans
+//     uint32_t blocksToWrite = (bytesToWrite + blockSize - 1) / blockSize;
+
+//     // Temp buffer for final partial block
+//     uint8_t* temp = (uint8_t*)malloc(blockSize);
+//     if(!temp) return -1;
+
+//     // Loop through each logical block of the file
+//     for(uint32_t i = 0; i < blocksToWrite; i++)
+//     {
+//         // Get the disk block number from the FAT
+//         // FAT maps the file's logical blocks to scattered physical blocks
+//         uint32_t blockNum = getBlockOfFile(entry->location, i);
+//         if(blockNum == FAT_EOF || blockNum == FAT_RESERVED)
+//         {
+//             free(temp);
+//             return -1;
+//         }
+
+//         // Figure out where in memory this chunk of data starts
+//         uint32_t offset = i * blockSize;
+//         // Figure out how many bytes there are left to write
+//         uint32_t chunk = (offset + blockSize <= blocksToWrite) 
+//                          ? blockSize 
+//                          : (blocksToWrite - offset);
+        
+//         // Store the result from LBAwrite
+//         int result;
+//         // If we have a full block of data left, write it directly
+//         if(chunk == blockSize)
+//         {
+//             result = (int)LBAwrite(data + offset, 1, blockNum);
+//         }
+//         else
+//         {
+//             // Otherwise, we're at the last partial block
+//             // Fill the temp buffer with zeros first to avoid garbage data and avoid overread
+//             // Copy only the valid portion of data into the temp buffer
+//             // Then write that padded block to the disk
+//             memset(temp, 0, blockSize);
+//             memcpy(temp, data + offset, chunk);
+//             result = (int)LBAwrite(temp, 1, blockNum);
+//         }
+//         if(result != 1)
+//         {
+//             free(temp);
+//             return -1;
+//         }
+//     }
+//     free(temp);
+//     return 0;
+// }
+
 int writeFileToDisk(char* data, DE* entry) {
     // get global VCB
     vcb* globalVCB = _getGlobalVCB();
-    if (globalVCB == NULL || entry == NULL) return -1;
+    if (globalVCB == NULL) {
+        return -1;
+    }
 
-    // We'll use the block size defined by the file system
-    uint32_t blockSize = globalVCB->blockSize;
-    // Total bytes to write is based on the files actual size
+    // set up variables for writing
     uint32_t bytesToWrite = entry->size;
-    // Figure out how many blocks the file spans
-    uint32_t blocksToWrite = (bytesToWrite + blockSize - 1) / blockSize;
+    uint32_t blocksToWrite = (bytesToWrite + globalVCB->blockSize - 1) / globalVCB->blockSize;
 
-    // Temp buffer for final partial block
-    uint8_t* temp = (uint8_t*)malloc(blockSize);
-    if(!temp) return -1;
-
-    // Loop through each logical block of the file
-    for(uint32_t i = 0; i < blocksToWrite; i++)
-    {
-        // Get the disk block number from the FAT
-        // FAT maps the file's logical blocks to scattered physical blocks
-        uint32_t blockNum = getBlockOfFile(entry->location, i);
-        if(blockNum == FAT_EOF || blockNum == FAT_RESERVED)
-        {
-            free(temp);
-            return -1;
-        }
-
-        // Figure out where in memory this chunk of data starts
-        uint32_t offset = i * blockSize;
-        // Figure out how many bytes there are left to write
-        uint32_t chunk = (offset + blockSize <= blocksToWrite) 
-                         ? blockSize 
-                         : (blocksToWrite - offset);
-        
-        // Store the result from LBAwrite
-        int result;
-        // If we have a full block of data left, write it directly
-        if(chunk == blockSize)
-        {
-            result = (int)LBAwrite(data + offset, 1, blockNum);
-        }
-        else
-        {
-            // Otherwise, we're at the last partial block
-            // Fill the temp buffer with zeros first to avoid garbage data and avoid overread
-            // Copy only the valid portion of data into the temp buffer
-            // Then write that padded block to the disk
-            memset(temp, 0, blockSize);
-            memcpy(temp, data + offset, chunk);
-            result = (int)LBAwrite(temp, 1, blockNum);
-        }
-        if(result != 1)
-        {
-            free(temp);
+    // write all blocks of file to disk
+    int r;  // contains result from LBAwrite
+    for (int i = 0; i < blocksToWrite; i++) {
+        r = LBAwrite(&data[i * globalVCB->blockSize],
+                     1,
+                     getBlockOfFile(entry->location, i));
+        if (r != 1) {   // abort on error
             return -1;
         }
     }
-    free(temp);
+
     return 0;
 }
+
 /* 
 *  Builds a new directory table in RAM, reserves enough disk blocks via the FAT
 *  allocator, fills "." and "..", marks all remaining entries as unused (reserved capacity).

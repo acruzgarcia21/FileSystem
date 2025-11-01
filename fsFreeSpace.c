@@ -15,6 +15,7 @@
 #include "fsFreeSpace.h"
 #include "fsLow.h"
 #include <stddef.h>
+#include <stdlib.h>
 
 uint32_t* fat = NULL;
 vcb* global_pVCB = NULL;
@@ -28,6 +29,7 @@ int initFAT(vcb* pVCB) {
     uint32_t fatNumBlocks = (numBlocks * sizeof(uint32_t) + blockSize - 1) / blockSize;
     fat = malloc(fatNumBlocks * blockSize);
     if (fat == NULL) {
+        perror("malloc");
         return -1;
     }
 
@@ -60,8 +62,8 @@ int initFAT(vcb* pVCB) {
     }
 
     // write FAT to disk
-    uint64_t result = LBAwrite((void *)fat, fatNumBlocks, pVCB->fatStart);
-    if (result != 0) {
+    uint64_t result = LBAwrite(fat, fatNumBlocks, pVCB->fatStart);
+    if (result != fatNumBlocks) {
         return -1;
     }
 
@@ -110,6 +112,13 @@ uint32_t allocateBlocks(uint32_t numBlocks) {
     global_pVCB->firstFreeBlock = fat[currentBlock];
     //set the currentBlock to EOF
     fat[currentBlock] = FAT_EOF;
+
+    // write FAT to disk
+    uint64_t result = LBAwrite(fat, global_pVCB->fatNumBlocks, global_pVCB->fatStart);
+    if (result != global_pVCB->fatNumBlocks) {
+        return -1;
+    }
+
     //return the start block index
     return startBlock;
     
