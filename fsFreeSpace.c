@@ -16,6 +16,7 @@
 #include "fsLow.h"
 #include <stddef.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 uint32_t* fat = NULL;
 vcb* global_pVCB = NULL;
@@ -40,7 +41,7 @@ int initFAT(vcb* pVCB) {
     }
 
     // set VCB values
-    pVCB->fatStart = 1;
+    pVCB->fatStart = 2;
     pVCB->fatNumBlocks = fatNumBlocks;
     pVCB->firstFreeBlock = fatNumBlocks + 1;
     pVCB->lastFreeBlock = numBlocks - 1;
@@ -84,7 +85,7 @@ int loadFAT(vcb* pVCB) {
 
     // load FAT into memory
     uint64_t result = LBAread((void *)fat, pVCB->fatNumBlocks, pVCB->fatStart);
-    if (result != 0) {
+    if (result != pVCB->fatNumBlocks) {
         return -1;
     }
 
