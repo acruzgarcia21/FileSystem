@@ -21,6 +21,7 @@
 #include "fsLow.h"
 #include "fsFreeSpace.h"
 
+// size of name field in struct; value chosen to eliminate internal padding
 #define DE_NAME_MAX 47
 
 // Flag bit masks
@@ -30,12 +31,13 @@
 typedef struct 
 {
     char name[DE_NAME_MAX];
-    uint8_t flags;
-    uint64_t created;
-    uint64_t accessed;
-    uint64_t modified;
-    uint32_t size;
-    uint32_t location; // Starting LBA
+    uint8_t flags;      // bitmap for DE properties:
+                        // DE_IS_USED (bit 0), DE_IS_DIR (bit 7)
+    uint64_t created;   // created timestamp
+    uint64_t accessed;  // accessed timestamp
+    uint64_t modified;  // modified timestamp
+    uint32_t size;      // size in bytes
+    uint32_t location;  // start block
 } DE;
 
 // Initializer for root directory/any directory
