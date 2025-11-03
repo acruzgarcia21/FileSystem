@@ -153,6 +153,13 @@ int freeBlocks(uint32_t startBlock) {
     // set new last free block in VCB
     global_pVCB->lastFreeBlock = fileEnd;
 
+    // write FAT to disk
+    uint64_t result = LBAwrite(fat, global_pVCB->fatNumBlocks, global_pVCB->fatStart);
+    if (result != global_pVCB->fatNumBlocks) {
+        return -1;
+    }
+
+
     return 0;
 }
 
