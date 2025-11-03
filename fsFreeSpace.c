@@ -96,6 +96,12 @@ int loadFAT(vcb* pVCB) {
 }
 
 uint32_t allocateBlocks(uint32_t numBlocks) {
+
+    // ensure that fat is initialized (mounted)
+    if (global_pVCB == NULL || fat == NULL) {
+        return -1;
+    }
+
     uint32_t currentBlock = global_pVCB->firstFreeBlock;
     
     //iterate through the FAT form the head
@@ -122,8 +128,6 @@ uint32_t allocateBlocks(uint32_t numBlocks) {
 
     //return the start block index
     return startBlock;
-    
-    return 0;
 }
 
 int freeBlocks(uint32_t startBlock) {
@@ -153,6 +157,11 @@ int freeBlocks(uint32_t startBlock) {
 }
 
 int resizeBlocks(uint32_t startBlock, int newSize) {
+
+    // ensure that fat is initialized (mounted)
+    if (global_pVCB == NULL || fat == NULL) {
+        return -1;
+    }
 
     // if the size is 0, call freeBlocks with startBlock and return
     if (newSize == 0) {
