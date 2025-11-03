@@ -21,7 +21,7 @@
 #include "fsLow.h"
 #include "fsFreeSpace.h"
 
-#define DE_NAME_MAX 48
+#define DE_NAME_MAX 47
 
 // Flag bit masks
 #define DE_IS_DIR 0x01  // 0000 0001 - directory
@@ -29,20 +29,24 @@
 
 typedef struct 
 {
-    char name[DE_NAME_MAX];    
+    char name[DE_NAME_MAX];
+    uint8_t flags;
+    uint64_t created;
+    uint64_t accessed;
+    uint64_t modified;
     uint32_t size;
     uint32_t location; // Starting LBA
-    uint32_t created;
-    uint32_t accessed;
-    uint32_t modified;
-    uint8_t flags;
 } DE;
 
 // Initializer for root directory/any directory
 DE* createDir(int count, const DE* parent, int blockSize);
 // write a file to disk
 int writeFileToDisk(char* data, DE* entry);
+// write raw blocks to disk in allocated blocks; return number of blocks
+// that were successfully written
+int writeBlocksToDisk(char* data, uint32_t startBlock, uint32_t numBlocks);
 
-uint32_t getCurrentTime();
+// get current time as a uint32_t
+uint64_t getCurrentTime();
 
 #endif

@@ -41,4 +41,7 @@ int resizeBlocks(uint32_t startBlock, int newSize);
 // get blocknum of certain offset
 uint32_t getBlockOfFile(uint32_t startBlock, uint32_t offset);
 
+// get the next block in FAT (or EOF if startBlock is at EOF)
+uint32_t getNextBlock(uint32_t startBlock);
+
 #endif

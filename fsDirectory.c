@@ -81,6 +81,36 @@ int writeFileToDisk(char* data, DE* entry) {
     return 0;
 }
 
+int writeBlocksToDisk(char* data, uint32_t startBlock, uint32_t numBlocks) {
+    // get global VCB
+    vcb* globalVCB = _getGlobalVCB();
+    if (globalVCB == NULL) {
+        return -1;
+    }
+
+    // write all blocks to disk
+    uint32_t writeBlock = startBlock;
+    int i;
+    for (i = 0; i < numBlocks; i++) {
+        // write single block to disk
+        int r = LBAwrite(&data[i * globalVCB->blockSize],
+                         1,
+                         writeBlock);
+        if (r != 1) {
+            return -1;
+        }
+
+        writeBlock = getNextBlock(writeBlock);
+        if (writeBlock == FAT_RESERVED) {
+            return -1;
+        } else if (writeBlock == FAT_EOF) {
+            return i + 1;
+        }
+    }
+
+    return i;
+}
+
 /* 
 *  Builds a new directory table in RAM, reserves enough disk blocks via the FAT
 *  allocator, fills "." and "..", marks all remaining entries as unused (reserved capacity).
@@ -95,6 +125,7 @@ DE* createDir(int count, const DE* parent, int blockSize)
     // We round up to a whole number of blocks so that we have reserved capacity
     // for future entries and not garbage data
     uint32_t bytesNeeded = (uint32_t)count * (uint32_t)sizeof(DE);
+    printf("%ld\n", sizeof(DE));
     int blocksNeeded = (bytesNeeded + blockSize - 1) / blockSize; 
     int bytesToMalloc = blocksNeeded * blockSize;
     int actualEntries = bytesToMalloc / (int)sizeof(DE);
@@ -148,8 +179,10 @@ DE* createDir(int count, const DE* parent, int blockSize)
     // We pass the table as raw bytes (char*) and the entry that
     // contains size/location (dir[0]) so the writer knows how much to write
     // and where the FAT chain begins
-    if(writeFileToDisk((char*)dir, &dir[0]) != 0)
+    int r = writeBlocksToDisk((char*)dir, dir[0].location, blocksNeeded);
+    if(r != blocksNeeded)
     {
+        printf("wanted to write %d blocks to disk, but wrote %d\n", blocksNeeded, r);
         free(dir);
         return NULL;
     }
@@ -157,7 +190,7 @@ DE* createDir(int count, const DE* parent, int blockSize)
 }
 
 //Get the current time in secionds as a uint32_t
-uint32_t getCurrentTime() {
+uint64_t getCurrentTime() {
     time_t now = time(NULL);
-    return (uint32_t)now;
+    return (uint64_t)now;
 }

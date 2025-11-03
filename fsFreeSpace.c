@@ -211,3 +211,7 @@ uint32_t getBlockOfFile(uint32_t startBlock, uint32_t offset) {
     //return the currentBlock
     return currentBlock;
 }
+
+uint32_t getNextBlock(uint32_t startBlock) {
+    return fat[startBlock];
+}

@@ -35,36 +35,41 @@ int initFileSystem ( uint64_t numberOfBlocks, uint64_t blockSize)
 	// get a pointer to the global vcb
 	vcb* ourVCB = _getGlobalVCB();
 
-	// read VCB into VCB struct via a buffer
+	// create buffer to read VCB into
 	char* vcbBuf = malloc(blockSize);
 	if (vcbBuf == NULL) {
 		perror("malloc");
 		return -1;
 	}
 
+	// read VCB into buffer
 	uint32_t got = LBAread(vcbBuf, 1, 0);
 	if(got == 1)
 	{
+		// copy vcb from read buffer into vcb object
 		memcpy(ourVCB, vcbBuf, sizeof(vcb));
 		free(vcbBuf);
 		vcbBuf = NULL;
 
+		// check if we need to format volume; if not, load and exit
 		if(ourVCB->signature == FS_VCB_MAGIC && ourVCB->blockSize == blockSize)
 		{
 			if(loadFAT(ourVCB) != 0)
-			{	
+			{
 				printf("loadFAT failed!\n");
 				return -1;
 			}
 			return 0; // mounted existing FS
 		}
 	}
-	else
+	else // failed to read VCB; abort
 	{
 		free(vcbBuf);
 		vcbBuf = NULL;
+		return -1;
 	}
 	
+	// if we have reached this point, we need to format the volume
 	if(initVCB(ourVCB, numberOfBlocks, blockSize) != 0)
 	{
 		printf("initVCB failed\n");

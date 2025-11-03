@@ -19,7 +19,7 @@
 #include <stdint.h>
 
 #define FS_VCB_MAGIC 0x8BADBEEF
-#define FS_ROOT_SIZE 50
+#define FS_ROOT_COUNT 51
 
 /* a point of concern: we have been using uint32_t (or unsigned int) for block
 addressing and block size, but in initFileSystem these are uint64_t. worth asking

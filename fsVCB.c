@@ -27,7 +27,7 @@ int initVCB(vcb* pVCB, uint64_t numberOfBlocks, uint64_t blockSize) {
     }
 
     // initialize root directory entry
-    DE* rootEntry = createDir(FS_ROOT_SIZE, NULL, pVCB->blockSize);
+    DE* rootEntry = createDir(FS_ROOT_COUNT, NULL, pVCB->blockSize);
     if (rootEntry == NULL) {
         printf("could not init root\n");
         return -1;
