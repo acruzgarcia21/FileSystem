@@ -125,7 +125,6 @@ DE* createDir(int count, const DE* parent, int blockSize)
     // We round up to a whole number of blocks so that we have reserved capacity
     // for future entries and not garbage data
     uint32_t bytesNeeded = (uint32_t)count * (uint32_t)sizeof(DE);
-    printf("%ld\n", sizeof(DE));
     int blocksNeeded = (bytesNeeded + blockSize - 1) / blockSize; 
     int bytesToMalloc = blocksNeeded * blockSize;
     int actualEntries = bytesToMalloc / (int)sizeof(DE);

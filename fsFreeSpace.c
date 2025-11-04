@@ -96,13 +96,13 @@ int loadFAT(vcb* pVCB) {
 }
 
 uint32_t allocateBlocks(uint32_t numBlocks) {
-
     // ensure that fat is initialized (mounted)
     if (global_pVCB == NULL || fat == NULL) {
         return -1;
     }
 
     uint32_t currentBlock = global_pVCB->firstFreeBlock;
+    uint32_t nextBlock;
     
     //iterate through the FAT form the head
     for (int i = 0; i < numBlocks; i++) {
@@ -110,15 +110,21 @@ uint32_t allocateBlocks(uint32_t numBlocks) {
         if (currentBlock == FAT_EOF) {
             return FAT_EOF;
         }
-        currentBlock = fat[currentBlock];
+
+        nextBlock = fat[currentBlock];
+
+        // if we are at EOF, then set EOF
+        if (i == numBlocks - 1) {
+            fat[currentBlock] = FAT_EOF;
+        }
+
+        currentBlock = nextBlock;
     }
 
     //store the start block as an index
     uint32_t startBlock = global_pVCB->firstFreeBlock;
     //set the index of the currentBlock's next block to the FreeBlock start
     global_pVCB->firstFreeBlock = fat[currentBlock];
-    //set the currentBlock to EOF
-    fat[currentBlock] = FAT_EOF;
 
     // write FAT to disk
     uint64_t result = LBAwrite(fat, global_pVCB->fatNumBlocks, global_pVCB->fatStart);
