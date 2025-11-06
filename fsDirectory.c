@@ -208,14 +208,41 @@ DE* findEntryInDirectory(DE* dir, int entryCount, const char* name)
 
 DE* loadDirectory(uint32_t startBlock, uint32_t size, uint32_t blockSize)
 {
-    int numBlocks = (size + blockSize - 1) / blockSize;
-    DE* dir = calloc(1, numBlocks * blockSize);
+    if(startBlock == 0 || blockSize == 0) return NULL;
+
+    // How many blocks we need to read to cover 'size' bytes
+    uint32_t numBlocks = (size + blockSize - 1) / blockSize;
+    if(numBlocks == 0) numBlocks = 1; // Ensure dir is 1 block
+
+    // Allocate a whole number of blocks 
+    uint32_t totalBytes = numBlocks * blockSize;
+    DE* dir = (DE*)calloc(1, totalBytes);
     if(!dir) return NULL;
 
-    if(LBAread(dir, numBlocks, startBlock) != numBlocks)
+    // Walk the FAT chain, reading one block at a time into the buffer
+    uint32_t block = startBlock;
+    uint8_t* writeptr = (uint8_t*)dir;
+
+    for(uint32_t i = 0; i < numBlocks; i++)
     {
-        free(dir);
-        return NULL;
+        if(block == FAT_RESERVED || block == 0 || block == FAT_EOF)
+        {
+            free(dir);
+            return NULL;
+        }
+        
+        if(LBAread(writeptr, 1, block) != 1)
+        {
+            free(dir);
+            return NULL;
+        }
+
+        writeptr += blockSize;
+
+        // On the last iteration we don't need the next block
+        if(i + 1 == numBlocks) break;
+        // Follow the fat chain
+        block = getNextBlock(block);
     }
     return dir;
 }
