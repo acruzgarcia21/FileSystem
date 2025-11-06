@@ -193,3 +193,29 @@ uint64_t getCurrentTime() {
     time_t now = time(NULL);
     return (uint64_t)now;
 }
+
+DE* findEntryInDirectory(DE* dir, int entryCount, const char* name)
+{
+    for(int i = 0; i < entryCount; i++)
+    {
+        if((dir[i].flags & DE_IS_USED) && strcmp(dir[i].name, name) == 0)
+        {
+            return &dir[i];
+        }
+    }
+    return NULL;
+}
+
+DE* loadDirectory(uint32_t startBlock, uint32_t size, uint32_t blockSize)
+{
+    int numBlocks = (size + blockSize - 1) / blockSize;
+    DE* dir = calloc(1, numBlocks * blockSize);
+    if(!dir) return NULL;
+
+    if(LBAread(dir, numBlocks, startBlock) != numBlocks)
+    {
+        free(dir);
+        return NULL;
+    }
+    return dir;
+}

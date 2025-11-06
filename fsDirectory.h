@@ -47,8 +47,11 @@ int writeFileToDisk(char* data, DE* entry);
 // write raw blocks to disk in allocated blocks; return number of blocks
 // that were successfully written
 int writeBlocksToDisk(char* data, uint32_t startBlock, uint32_t numBlocks);
-
 // get current time as a uint32_t
 uint64_t getCurrentTime();
+// Find an entry name withing a loaded directory
+DE* findEntryInDirectory(DE* dir, int entryCount, const char* name);
+// Load a directory table to disk (reads DE array from given location)
+DE* loadDirectory(uint32_t startBlock, uint32_t size, uint32_t blockSize);
 
 #endif
