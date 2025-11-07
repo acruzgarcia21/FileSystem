@@ -40,6 +40,14 @@ typedef struct
     uint32_t location;  // start block
 } DE;
 
+// added by Alex Tamayo 11/6/2025 @ 6pm
+// path parsing info structure
+typedef struct ppinfo {
+    DE* parent;              // loaded parent directory
+    char* lastElementName;   // name of the last element
+    int index;               // index in parent (-1 if not found)
+} ppinfo;
+
 // Initializer for root directory/any directory
 DE* createDir(int count, const DE* parent, int blockSize);
 // write a file to disk
@@ -53,5 +61,13 @@ uint64_t getCurrentTime();
 DE* findEntryInDirectory(DE* dir, int entryCount, const char* name);
 // Load a directory table to disk (reads DE array from given location)
 DE* loadDirectory(uint32_t startBlock, uint32_t size, uint32_t blockSize);
+
+// Added by Alex Tamayo 11/6/2025 @ 6pm
+// parse path and navigate to parent
+int ParsePath(const char* path, ppinfo* ppi);
+
+// helper functions used by ParsePath
+int findInDirectory(DE* dir, int entryCount, const char* name);
+int isDEaDir(DE* entry);
 
 #endif

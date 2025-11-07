@@ -246,3 +246,122 @@ DE* loadDirectory(uint32_t startBlock, uint32_t size, uint32_t blockSize)
     }
     return dir;
 }
+
+// ***********************************************
+// added by Alex Tamayo 11/6/2025 @ 6pm
+// ***********************************************
+
+int findInDirectory(DE* dir, int entryCount, const char* name) {
+    for (int i = 0; i < entryCount; i++) {
+        if ((dir[i].flags & DE_IS_USED) && strcmp(dir[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int isDEaDir(DE* entry) {
+    return (entry->flags & DE_IS_DIR) != 0;
+}
+
+int ParsePath(const char* path, ppinfo* ppi) {
+    vcb* pVCB = _getGlobalVCB();
+    CWD* cwd = getCWD();
+    
+    DE* startParent;
+    DE* parent;
+    char* saveptr;
+    char* token1;
+    char* token2;
+    
+    if (path == NULL) return -1;
+    
+    // Make copy since strtok_r modifies the string
+    char* pathCopy = strdup(path);
+    if (!pathCopy) return -1;
+    
+    // determine starting directory
+    if (path[0] == '/') {
+        startParent = loadDirectory(pVCB->rootStart, pVCB->rootSize, pVCB->blockSize);
+    } else {
+        startParent = loadDirectory(cwd->location, cwd->size, pVCB->blockSize);
+    }
+    
+    if (!startParent) {
+        free(pathCopy);
+        return -1;
+    }
+    
+    parent = startParent;
+    int parentEntryCount = (path[0] == '/') ? 
+                           (pVCB->rootSize / sizeof(DE)) : 
+                           (cwd->size / sizeof(DE));
+    
+    // get first token
+    token1 = strtok_r(pathCopy, "/", &saveptr);
+    
+    if (token1 == NULL) {
+        // empty path or just "/"
+        if (path[0] == '/') {
+            ppi->parent = parent;
+            ppi->lastElementName = NULL;
+            ppi->index = -2;  // refers to root itself
+            free(pathCopy);
+            return 0;
+        } else {
+            if (parent != startParent) free(parent);
+            free(pathCopy);
+            return -1;
+        }
+    }
+    
+    // traverse using two tokens
+    while (1) {
+        token2 = strtok_r(NULL, "/", &saveptr);
+        
+        // find token1 in current directory
+        int idx = findInDirectory(parent, parentEntryCount, token1);
+        
+        if (token2 == NULL) {
+            // token1 is the last element, this is what we're looking for
+            ppi->parent = parent;
+            ppi->lastElementName = strdup(token1);  // must strdup to persist after pathCopy freed
+            ppi->index = idx;
+            free(pathCopy);
+            return 0;
+        }
+        
+        // not the last element, so it must exist and be a directory
+        if (idx == -1) {
+            if (parent != startParent) free(parent);
+            free(pathCopy);
+            return -2;  // not found
+        }
+        
+        if (!isDEaDir(&parent[idx])) {
+            if (parent != startParent) free(parent);
+            free(pathCopy);
+            return -3;  // not a directory
+        }
+        
+        // load the next directory in the path
+        DE* tempParent = loadDirectory(parent[idx].location, 
+                                       parent[idx].size, 
+                                       pVCB->blockSize);
+        if (tempParent == NULL) {
+            if (parent != startParent) free(parent);
+            free(pathCopy);
+            return -1;
+        }
+        
+        // update for next iteration
+        parentEntryCount = parent[idx].size / sizeof(DE);
+        
+        if (parent != startParent) {
+            free(parent);
+        }
+        
+        parent = tempParent;
+        token1 = token2;
+    }
+}
