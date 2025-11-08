@@ -210,19 +210,277 @@ int fs_rmdir(const char *pathname) {
     return 0;
 }
 
-// int fs_isFile(char * filename)
-// {
-    
-//     return 1;
-// }
+int fs_isFile(char * filename)
+{
+    // Validate input filename
+    if(!filename || strlen(filename) == 0) return 0;
 
-// int fs_isDir(char * pathname)
-// {
-    
-//     return 1;
-// }
+    vcb* vcb = _getGlobalVCB();
+    if(!vcb) return 0;
 
-// int fs_delete(char* filename)
-// {
+    // Load root directory into memory
+    DE* currentDirectory = loadDirectory(vcb->rootStart, vcb->rootSize, vcb->blockSize);
+    if(!currentDirectory) return 0;
+
+    uint32_t currentSize = vcb->rootSize;
+
+    // Skip leading '/' if present
+    while (*filename == '/') filename ++;
+
+    char* token = strtok(filename, "/");
+    DE* entry = NULL;
+
+    // Walk through each path component (directory or file)
+    while(token)
+    {
+        // Compute how many entries exist in the current directory
+        int entryCount = (int)(currentSize / sizeof(DE));
+        entry = findEntryInDirectory(currentDirectory, entryCount, token);
+        if(!entry) 
+        {
+            // Not found
+            free(currentDirectory);
+            currentDirectory = NULL;
+            return 0;
+        }
+
+        // Check if there is another compinent (subdirectory)
+        char* next = strtok(NULL, "/");
+        if(next)
+        {
+            // Not a directory. Invalid path
+            if(!(entry->flags & DE_IS_DIR))
+            {
+                free(currentDirectory);
+                currentDirectory = NULL;
+                return 0;
+            }
+
+            // Load next directory from disk
+            DE* nextDir = loadDirectory(entry->location, entry->size, vcb->blockSize);
+            if(!nextDir)
+            {
+                free(currentDirectory);
+                currentDirectory = NULL;
+                return 0;
+            }
+
+            // Free current and continue into the next directory
+            free(currentDirectory);
+            currentDirectory = nextDir;
+            // Update size for new directory
+            currentSize = entry->size;
+
+            token = next;
+        }
+        else break;
+    }
+
+    // Confirm that final entry is a used file (not a directory)
+    int isFile = (entry && (entry->flags & DE_IS_USED) && !(entry->flags & DE_IS_DIR)) ? 1 : 0;
+    free(currentDirectory);
+    currentDirectory = NULL;
+    return isFile;
+}
+
+int fs_isDir(char * pathname)
+{
+    // Validate input path
+    if(!pathname || strlen(pathname) == 0) return 0;
+
+    // Get VCB
+    vcb* vcb = _getGlobalVCB();
+    if(!vcb) return 0;
+
+    // Load root directory
+    DE* currentDirectory = loadDirectory(vcb->rootStart, vcb->rootSize, vcb->blockSize);
+    if(!currentDirectory) return 0;
+
+    uint32_t currentSize = vcb->rootSize;
+
+    // Skip leading '/' if present
+    while (*pathname == '/') pathname++;
+
+    // Tokenize path
+    char* token = strtok(pathname, "/");
+    DE* entry = NULL;
+
+    // Walk through directories until reaching last component
+    while(token)
+    {
+        int entryCount = (int)(currentSize / sizeof(DE));
+        entry = findEntryInDirectory(currentDirectory, entryCount, token);
+
+        if(!entry)
+        {
+            free(currentDirectory);
+            currentDirectory = NULL;
+            return 0;
+        }
+
+        char* next = strtok(NULL, "/");
+        if(next)
+        {
+            // Must be a directory
+            if(!(entry->flags & DE_IS_DIR))
+            {
+                free(currentDirectory);
+                currentDirectory = NULL;
+                return 0;
+            }
+
+            // Load next subdirectory
+            DE* nextDir = loadDirectory(entry->location, entry->size, vcb->blockSize);
+            if(!nextDir)
+            {
+                free(currentDirectory);
+                currentDirectory = NULL;
+                return 0;
+            }
+
+            free(currentDirectory);
+            currentDirectory = nextDir;
+            // Update size for new directory
+            currentSize = entry->size;
+
+            token = next;
+        } 
+        else 
+        {
+            break;
+        }
+    }
+
+    // Check that this final entry is a directory and used
+    int isDir = (entry && (entry->flags & DE_IS_USED) && (entry->flags & DE_IS_DIR)) ? 1 : 0;
+    free(currentDirectory);
+    currentDirectory = NULL;
+    return isDir;
+}
+
+int fs_delete(char* filename)
+{
+    // Validate input
+    if(!filename || strlen(filename) == 0) return -1;
+
+    // Load VCB
+    vcb* vcb = _getGlobalVCB();
+    if(!vcb) return -1;
+
+    // Load root directory
+    DE* currentDirectory = loadDirectory(vcb->rootStart, vcb->rootSize, vcb->blockSize);
+    if(!currentDirectory) return -1;
+
+    // Track the parent directory's size so we know how many entries to scan
+    uint32_t parentSize  = vcb->rootSize; 
+    uint32_t parentStart = vcb->rootStart;
+
+    // Skip any leading slashes
+    while (*filename == '/') filename++;
     
-// }
+    DE* parentDir   = currentDirectory; // Directory that contains the target
+    DE* parentEntry = NULL;             // The DE of the parent dir (within its parent)
+    DE* entry       = NULL;
+
+    // Tokenise path
+    char* token = strtok(filename, "/");
+
+    // Traverse path until the target file is found
+    while(token)
+    {
+        int entryCount = (int)(parentSize / sizeof(DE));
+        entry = findEntryInDirectory(parentDir, entryCount, token);
+        if(!entry)
+        {
+            free(parentDir);
+            parentDir = NULL;
+            return -1;
+        }
+
+        char* next = strtok(NULL, "/");
+        if(next)
+        {
+            // Must be a directory if we have more tokens to walk through
+            if(!(entry->flags & DE_IS_DIR))
+            {
+                free(parentDir);
+                parentDir = NULL;
+                return -1;
+            }
+
+            // Load next directory in chain
+            DE* nextDir = loadDirectory(entry->location, entry->size, vcb->blockSize);
+            if(!nextDir)
+            {
+                free(parentDir);
+                parentDir = NULL;
+                return -1;
+            }
+
+            free(parentDir);
+            parentDir   = nextDir;
+            parentEntry = entry;
+            parentStart = entry->location;
+            parentSize  = entry->size;
+
+            token = next;
+        } 
+        else
+        {
+            break;
+        }
+    }
+
+    // Safety check: ensure entry exists
+    if(!entry)
+    {
+        free(parentDir);
+        parentDir = NULL;
+        return -1;
+    }
+    // Prevent deletion of '.' or '..'
+    if (strcmp(entry->name, ".") == 0 || strcmp(entry->name,  "..") == 0)
+    {
+        free(parentDir);
+        parentDir = NULL;
+        return -1;
+    }
+
+    // Validate that this is an existing file, not a directory
+    if(!entry || !(entry->flags & DE_IS_USED) || (entry->flags & DE_IS_DIR))
+    {
+        free(parentDir);
+        parentDir = NULL;
+        return -1;
+    }
+
+    // Free the file's blocks and clear its DE
+    if(entry->location != 0) freeBlocks(entry->location);
+
+    // Reset directory entry fields
+    memset(entry->name, 0, DE_NAME_MAX);
+    entry->flags    = 0;
+    entry->size     = 0;
+    entry->location = 0;
+    entry->created  = 0;
+    entry->accessed = 0;
+    entry->modified = 0;
+
+    // Write parent directory back to disk
+    int blocksToWrite = (int)((parentSize + vcb->blockSize - 1) / vcb->blockSize);
+    int wrote = writeBlocksToDisk((char*)parentDir, parentStart, blocksToWrite);
+
+    // Verify the write completed fully
+    if(wrote != blocksToWrite)
+    {
+        printf("fs_delete: failed to write directory back to disk (wrote %d of %d)\n", wrote, blocksToWrite);
+        free(parentDir);
+        parentDir = NULL;
+        return -1;
+    }
+
+    // Cleanup and exit
+    free(parentDir);
+    parentDir = NULL;
+    return 0;
+}
