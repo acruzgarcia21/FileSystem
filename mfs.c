@@ -210,6 +210,110 @@ int fs_rmdir(const char *pathname) {
     return 0;
 }
 
+//Directory iteration functions
+fdDir * fs_opendir(const char *pathname) {
+
+    //validate input and the path are valid
+    if (!pathname || strlen(pathname) == 0) {
+        return NULL;
+    }
+
+    ppinfo ppi;
+    int result = ParsePath(pathname, &ppi);
+
+    if (result < 0) {
+        return NULL;
+    }
+
+    //create our struct
+    fdDir* dirInfo = malloc(sizeof(fdDir));
+    if (!dirInfo) {
+        free(ppi.parent);
+        free(ppi.lastElementName);
+        return NULL;
+    }
+
+    //Load the directory we'll be iterating through
+    DE * directory = loadDirectory(ppi.parent[ppi.index].location,
+                      ppi.parent[ppi.index].size, _getGlobalVCB()->blockSize);
+
+    if (!directory) {
+        free(dirInfo);
+        free(ppi.parent);
+        free(ppi.lastElementName);
+        return NULL;
+    }
+
+    //populate the struct
+    dirInfo->directory = directory;
+    dirInfo->d_reclen = directory->size / sizeof(DE);
+    dirInfo->dirEntryPosition = 0;
+    dirInfo->di = malloc(sizeof(struct fs_diriteminfo));
+    if (!dirInfo->di) {
+        free(dirInfo->directory);
+        free(dirInfo);
+        free(ppi.parent);
+        free(ppi.lastElementName);
+        return NULL;
+    }
+
+    //Free the parent info of the directory we want
+    free(ppi.parent);
+    free(ppi.lastElementName);
+
+    return dirInfo;
+}
+
+struct fs_diriteminfo *fs_readdir(fdDir *dirp) {
+    //validate input
+    if (!dirp) {
+        return NULL;
+    }
+
+    //if we've reached the end of the directory, return NULL
+    if (dirp->dirEntryPosition >= dirp->d_reclen) {
+        return NULL;
+    }
+
+    //get the current directory entry
+    DE currentEntry = dirp->directory[dirp->dirEntryPosition];
+
+    //populate the fs_diriteminfo struct
+    struct fs_diriteminfo * diritem =  dirp->di; //refrence ptr
+    diritem->d_reclen = currentEntry.size;
+    
+    if (currentEntry.flags & DE_IS_DIR) {
+        diritem->fileType = FT_DIRECTORY;
+    } else {
+        diritem->fileType = FT_REGFILE;
+    }
+
+    strcpy(diritem->d_name, currentEntry.name);
+
+    //increment position for next read
+    dirp->dirEntryPosition += 1;
+
+    return dirp->di;
+}
+
+int fs_closedir(fdDir *dirp) {
+    //validate input
+    if (!dirp) {
+        return -1;
+    }
+
+    //free allocated memory
+    if (dirp->directory) {
+        free(dirp->directory);
+    }
+    if (dirp->di) {
+        free(dirp->di);
+    }
+    free(dirp);
+
+    return 0;
+}
+
 int fs_isFile(char * filename)
 {
     // Validate input filename
