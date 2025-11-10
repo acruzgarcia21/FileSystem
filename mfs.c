@@ -193,13 +193,13 @@ int fs_rmdir(const char *pathname) {
     uint32_t parentLocation = ppi.parent[0].location;
     uint32_t parentSize = ppi.parent[0].size;
     
-    free(ppi.parent);
-    
-    if (removeEntryFromDirectory(parentLocation, parentSize, ppi.lastElementName) != 0) {
+    if (removeEntryFromDirectory(ppi.parent, ppi.lastElementName) != 0) {
+        free(ppi.parent);
         free(ppi.lastElementName);
         return -1;
     }
     
+    free(ppi.parent);
     free(ppi.lastElementName);
     
     // Free blocks
@@ -588,4 +588,23 @@ int fs_delete(char* filename)
     free(parentDir);
     parentDir = NULL;
     return 0;
+}
+
+int fs_setcwd(char *pathname) {
+    return setcwdInternal(pathname);
+}
+
+char * fs_getcwd(char *pathname, size_t size) {
+    char* absPath = cwdBuildAbsPath();
+    if (absPath == NULL) {
+        return NULL;
+    }
+
+    if (strlen(absPath) > size) {
+        return NULL;
+    }
+
+    strncpy(pathname, absPath, size);
+    free(absPath);
+    return pathname;
 }

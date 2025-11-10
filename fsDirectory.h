@@ -76,10 +76,11 @@ int isDEaDir(DE* entry);
 char* cwdBuildAbsPath();
 DE* getcwdInternal();
 int setcwdInternal(const char* path);
+int initCwdAtRoot();
 
 // temporary directory functions
 int addEntryToDirectory(DE* parent, DE* newEntry);
-int removeEntryFromDirectory(uint32_t dirLocation, uint32_t dirSize, const char* entryName);
+int removeEntryFromDirectory(DE* parent, const char* entryName);
 int isDirectoryEmpty(DE* dir, uint32_t entryIdx);
 
 #endif

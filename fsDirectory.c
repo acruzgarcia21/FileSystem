@@ -121,7 +121,7 @@ int readBlocksFromDisk(char* buffer, uint32_t startBlock, uint32_t numBlocks) {
     // allocate buffer
     buffer = malloc(numBlocks * pVCB->blockSize);
     if (buffer == NULL) {
-        return NULL;
+        return -1;
     }
 
     // loop over blocks and read into buffer
@@ -133,7 +133,7 @@ int readBlocksFromDisk(char* buffer, uint32_t startBlock, uint32_t numBlocks) {
                         readBlock);
         if (r != 1) {
             free(buffer);
-            return NULL;
+            return -1;
         }
 
         readBlock = getNextBlock(readBlock);
@@ -215,6 +215,7 @@ DE* createDir(int count, const DE* parent, int blockSize)
     // We pass the table as raw bytes (char*) and the entry that
     // contains size/location (dir[0]) so the writer knows how much to write
     // and where the FAT chain begins
+    printf("writing to disk, location = %ld, blocksNeeded = %d\n", dir[0].location, blocksNeeded);
     int r = writeBlocksToDisk((char*)dir, dir[0].location, blocksNeeded);
     if(r != blocksNeeded)
     {
@@ -445,8 +446,7 @@ void freeCwdStack(DE** stackToFree) {
 }
 
 void freeCwdMemory() {
-    
-
+    freeCwdStack(cwdStack);
     free(rootDirectory);
 }
 
@@ -496,12 +496,12 @@ char* cwdBuildAbsPath() {
     }
 
     // build string
-    ret[0] = '/';
+    strcpy(ret, "/");
     size_t retIdx = 1;
     for (int i = 1; i <= cwdLevel; i++) {
         strcpy(&ret[retIdx], cwdStack[i]->name);
         retIdx += strlen(cwdStack[i]->name);
-        ret[retIdx++] = '/';
+        strcpy(&ret[retIdx++], "/");
     }
 
     // return path
@@ -509,13 +509,17 @@ char* cwdBuildAbsPath() {
 }
 
 int setcwdInternal(const char* path) {
+    printf("setting cwd, current cwdLevel = %d\n", cwdLevel);
+
     vcb* pVcb = _getGlobalVCB();
     if (pVcb == NULL) {
+        printf("Could not fetch global VCB instance\n");
         return -1;
     }
 
     // safety check on path
     if (path == NULL) {
+        printf("Path was NULL\n");
         return -1;
     }
 
@@ -523,11 +527,13 @@ int setcwdInternal(const char* path) {
     ppinfo ppreturn;
     int r = ParsePath(path, &ppreturn);
     if (r != 0) {
+        printf("Path was not parseable\n");
         return r;
     }
 
     // save cwd state so we can restore it if things go wrong
     if (saveCwdState() != 0) {
+        printf("Could not save cwd state\n");
         return -1;
     }
 
@@ -537,6 +543,7 @@ int setcwdInternal(const char* path) {
     // copy path
     char* pathCopy = strdup(path);
     if (pathCopy == NULL) {
+        perror("strdup");
         return -1;
     }
 
@@ -545,20 +552,30 @@ int setcwdInternal(const char* path) {
         for (int i = 1; i < MAX_PATH_DEPTH; i++) {
             if (cwdStack[i] != NULL) {
                 free(cwdStack[i]);
+                cwdStack[i] = NULL;
             }
         }
         cwdLevel = 0;
     }
 
-    char* saveptr, token;
-    token = strtok_r(pathCopy, "/", saveptr);
+    char* saveptr;
+    char* token;
+    token = strtok_r(pathCopy, "/", &saveptr);
     // path is nothing; do not change directory
     if (token == NULL) {
         return 0;
     }
 
-    DE* parent = cwdStack[cwdLevel];
-    uint32_t parentEntryCount = parent->size / pVcb->blockSize;
+    DE* parent = loadDirectory(cwdStack[cwdLevel]->location,
+                               cwdStack[cwdLevel]->size,
+                               pVcb->blockSize);
+    if (parent == NULL) {
+        restoreCwdState();
+        free(pathCopy);
+        return -1;
+    }
+
+    uint32_t parentEntryCount = parent[0].size / pVcb->blockSize;
 
     // start walking up the path
     while (1) {
@@ -566,46 +583,50 @@ int setcwdInternal(const char* path) {
         if (strcmp(token, "..") == 0) {
             if (cwdLevel != 0) {
                 free(cwdStack[cwdLevel]);
+                cwdStack[cwdLevel] = NULL;
                 cwdLevel--;
+                parent = loadDirectory(cwdStack[cwdLevel]->location,
+                                       cwdStack[cwdLevel]->size,
+                                       pVcb->blockSize);
             }
-            continue;
         }
-
         // if token is ., do nothing
-        if (strcmp(token, ".") == 0) {
-            continue;
+        else if (strcmp(token, ".") != 0) {
+            // find token in current directory
+            int idx = findInDirectory(parent, parentEntryCount, token);
+            if (idx < 0) {
+                free(pathCopy);
+                restoreCwdState();
+                printf("could not find token in current directory\n");
+                return idx;
+            }
+
+            // add that directory entry to stack
+            free(parent);
+            parent = loadDirectory(cwdStack[cwdLevel]->location,
+                                        cwdStack[cwdLevel]->size,
+                                        pVcb->blockSize);
+            if (parent == NULL) {
+                free(pathCopy);
+                restoreCwdState();
+                printf("Could not load directory\n");
+                return -1;
+            }
+
+            // increment cwd level, but be careful not to overshoot MAX_PATH_DEPTH
+            cwdLevel++;
+            if (cwdLevel == MAX_PATH_DEPTH) {
+                free(pathCopy);
+                printf("Iterated beyond maximum path depth\n");
+                restoreCwdState();
+                return -1;
+            }
+
+            cwdStack[cwdLevel] = malloc(sizeof(DE));
+            memcpy(cwdStack[cwdLevel], &parent[idx], sizeof(DE));
         }
 
-        // find token in current directory
-        int idx = findInDirectory(parent, parentEntryCount, token);
-        if (idx < 0) {
-            free(pathCopy);
-            restoreCwdState();
-            return idx;
-        }
-
-        // add that directory entry to stack
-        DE* loadedDir = loadDirectory(cwdStack[cwdLevel]->location,
-                                      cwdStack[cwdLevel]->size,
-                                      pVcb->blockSize);
-        if (loadedDir == NULL) {
-            free(pathCopy);
-            restoreCwdState();
-            return -1;
-        }
-
-        // increment cwd level, but be careful not to overshoot MAX_PATH_DEPTH
-        cwdLevel++;
-        if (cwdLevel == MAX_PATH_DEPTH) {
-            free(pathCopy);
-            restoreCwdState();
-            return -1;
-        }
-
-        cwdStack[cwdLevel] = malloc(sizeof(DE));
-        memcpy(cwdStack[cwdLevel], &loadedDir[idx], sizeof(DE));
-
-        token = strtok_r(saveptr, "/", saveptr);
+        token = strtok_r(saveptr, "/", &saveptr);
         if (token == NULL) {
             return 0;
         }
@@ -619,34 +640,88 @@ DE* getcwdInternal() {
 // helper functions for directory creation
 
 int addEntryToDirectory(DE* parent, DE* newEntry) {
+    printf("addEntryToDirectory: 1\n");
     // get global VCB
     vcb* globalVCB = _getGlobalVCB();
     if (globalVCB == NULL) {
         return -1;
     }
-
+    printf("addEntryToDirectory: 2\n");
     uint32_t numEntries = parent->size / sizeof(DE);
+
+    DE* loadedDir = loadDirectory(parent->location, parent->size, globalVCB->blockSize);
+    if (loadedDir == NULL) {
+        return -1;
+    }
 
     // find an appropriate spot
     int insertionIdx = 0;
     for (int i = 2; i < numEntries; i++) {
         if (!(parent[i].flags & DE_IS_USED)) {
-            memcpy(&parent[i], newEntry, sizeof(DE));
             insertionIdx = i;
             break;
         }
     }
-
+    printf("addEntryToDirectory: 3\n");
     // if we couldn't insert, allocate more space in directory
     if (insertionIdx == 0) {
-        
+        // check if we need to allocate more blocks
+        uint32_t numBlocksCurrent = parent->size / globalVCB->blockSize;
+        uint32_t newSize = parent->size + sizeof(DE);
+        uint32_t numBlocksNew = newSize / globalVCB->blockSize;
+
+        // if yes, allocate the additional disk space
+        if (numBlocksNew > numBlocksCurrent) {
+            int r = resizeBlocks(parent->location, parent->size + sizeof(DE));
+            if (r != 0) {
+                free(loadedDir);
+                return r;
+            }
+        }
+        // set insertion index to new final entry
+        insertionIdx = numEntries;
     }
 
+    // copy in the new entry to its proper place
+    memcpy(&loadedDir[insertionIdx], newEntry, sizeof(DE));
+
+    // write blocks to disk
     uint32_t numBlocks = (parent->size + globalVCB->blockSize - 1) / globalVCB->blockSize;
-    writeBlocksToDisk((char *)parent, parent[0].location, numBlocks);
+    printf("got to end of addEntryToDirectory...\n");
+    int r = writeBlocksToDisk((char *)loadedDir, parent->location, numBlocks);
+    if (r != numBlocks) {
+        return -1;
+    }
+    return 0;
+}
+
+int removeEntryFromDirectory(DE* parent, const char* entryName) {
+    int numEntries = parent->size / sizeof(DE);
+    DE* dirToRemove = findEntryInDirectory(parent, numEntries, entryName);
+    if (dirToRemove == NULL) {
+        return -1;
+    }
+
+    // set bit to unused to clear entry
+    dirToRemove->flags &= ~DE_IS_USED;
+
+    return 0;
 }
 
 
+int isDirectoryEmpty(DE* dir, uint32_t numEntries) {
+    // if there are only two entries, it's empty by definition
+    if (numEntries == 2) {
+        return 1;
+    }
 
-int removeEntryFromDirectory(uint32_t dirLocation, uint32_t dirSize, const char* entryName);
-int isDirectoryEmpty(DE* dir, uint32_t entryIdx);
+    // iterate through entries and return false if we see one that's used
+    for (int i = 2; i < numEntries; i++) {
+        if (dir[i].flags & DE_IS_USED != 0) {
+            return 0;
+        }
+    }
+
+    // reaching this point means we didn't see a used entry, so return true
+    return 1;
+}

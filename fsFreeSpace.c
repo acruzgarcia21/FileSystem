@@ -144,7 +144,7 @@ int freeBlocks(uint32_t startBlock) {
     fat[global_pVCB->lastFreeBlock] = startBlock;
 
     // find the end of the file we just freed
-    uint32_t fileEnd;
+    uint32_t fileEnd = startBlock;
     do {
         fileEnd = fat[fileEnd];
 
