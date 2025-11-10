@@ -133,6 +133,12 @@ uint32_t allocateBlocks(uint32_t numBlocks) {
         return -1;
     }
 
+    // write VCB to disk
+    result = LBAwrite(global_pVCB, 1, 0);
+    if (result != 1) {
+        return -1;
+    }
+
     //return the start block index
     return startBlock;
 }
@@ -148,17 +154,18 @@ int freeBlocks(uint32_t startBlock) {
 
     // find the end of the file we just freed
     uint32_t fileEnd = startBlock;
-    do {
+    uint32_t fileEndPtr;
+    while (fileEnd != FAT_EOF && fileEnd != FAT_RESERVED) {
+        fileEndPtr = fileEnd;
         fileEnd = fat[fileEnd];
+    }
 
-        // handle case where we run into reserved blocks
-        if (fat[fileEnd] == FAT_RESERVED) {
-            return -1;
-        }
-    } while (fat[fileEnd != FAT_EOF]);
+    if (fileEnd == FAT_RESERVED) {
+        return -1;
+    }
 
     // set new last free block in VCB
-    global_pVCB->lastFreeBlock = fileEnd;
+    global_pVCB->lastFreeBlock = fileEndPtr;
 
     // write FAT to disk
     uint64_t result = LBAwrite(fat, global_pVCB->fatNumBlocks, global_pVCB->fatStart);
@@ -166,6 +173,11 @@ int freeBlocks(uint32_t startBlock) {
         return -1;
     }
 
+    // write VCB to disk
+    result = LBAwrite(global_pVCB, 1, 0);
+    if (result != 1) {
+        return -1;
+    }
 
     return 0;
 }

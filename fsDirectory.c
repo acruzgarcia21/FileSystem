@@ -592,6 +592,7 @@ int setcwdInternal(const char* path) {
             if (idx < 0) {
                 restoreCwdState();
                 free(pathCopy);
+                free(parent);
                 printf("could not find token in current directory\n");
                 return idx;
             }
@@ -600,7 +601,24 @@ int setcwdInternal(const char* path) {
             cwdLevel++;
             if (cwdLevel == MAX_PATH_DEPTH) {
                 free(pathCopy);
+                free(parent);
                 printf("Iterated beyond maximum path depth\n");
+                restoreCwdState();
+                return -1;
+            }
+
+            if (!(parent[idx].flags & DE_IS_USED)) {
+                free(pathCopy);
+                free(parent);
+                printf("Attempted to access nonexistent directory\n");
+                restoreCwdState();
+                return -1;
+            }
+
+            if (!(parent[idx].flags & DE_IS_DIR)) {
+                free(pathCopy);
+                free(parent);
+                printf("Attempted to access file as directory\n");
                 restoreCwdState();
                 return -1;
             }
@@ -692,6 +710,12 @@ int addEntryToDirectory(DE* parent, DE* newEntry) {
 }
 
 int removeEntryFromDirectory(DE* parent, const char* entryName) {
+    vcb* pVcb = _getGlobalVCB();
+    if (pVcb == NULL) {
+        return -1;
+    }
+
+    printf("inside removeEntryFromDirectory\n");
     int numEntries = parent->size / sizeof(DE);
     DE* dirToRemove = findEntryInDirectory(parent, numEntries, entryName);
     if (dirToRemove == NULL) {
@@ -700,6 +724,12 @@ int removeEntryFromDirectory(DE* parent, const char* entryName) {
 
     // set bit to unused to clear entry
     dirToRemove->flags &= ~DE_IS_USED;
+
+    int numBlocks = parent[0].size / pVcb->blockSize;
+    int r = writeBlocksToDisk((char *)parent, parent[0].location, numBlocks);
+    if (r != numBlocks) {
+        return -1;
+    }
 
     return 0;
 }
