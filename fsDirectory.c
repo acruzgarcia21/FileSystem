@@ -743,7 +743,7 @@ int isDirectoryEmpty(DE* dir, uint32_t numEntries) {
 
     // iterate through entries and return false if we see one that's used
     for (int i = 2; i < numEntries; i++) {
-        if (dir[i].flags & DE_IS_USED != 0) {
+        if ((dir[i].flags & DE_IS_USED) != 0) {
             return 0;
         }
     }
