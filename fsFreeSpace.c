@@ -98,6 +98,7 @@ int loadFAT(vcb* pVCB) {
 uint32_t allocateBlocks(uint32_t numBlocks) {
     // ensure that fat is initialized (mounted)
     if (global_pVCB == NULL || fat == NULL) {
+        printf("something was null\n");
         return -1;
     }
 
@@ -108,6 +109,7 @@ uint32_t allocateBlocks(uint32_t numBlocks) {
     for (int i = 0; i < numBlocks; i++) {
         //if the current block is our EOF sentinel, return EOF sentinel
         if (currentBlock == FAT_EOF) {
+            printf("current block is EOF\n");
             return FAT_EOF;
         }
 
@@ -127,6 +129,7 @@ uint32_t allocateBlocks(uint32_t numBlocks) {
     // write FAT to disk
     uint64_t result = LBAwrite(fat, global_pVCB->fatNumBlocks, global_pVCB->fatStart);
     if (result != global_pVCB->fatNumBlocks) {
+        printf("could not write fat\n");
         return -1;
     }
 

@@ -475,7 +475,10 @@ void restoreCwdState() {
     // reset cwd stack
     freeCwdStack(cwdStack);
 
-    memcpy(cwdStack, cwdStackCopy, MAX_PATH_DEPTH * sizeof(DE*));
+    memcpy(&cwdStack[1], &cwdStackCopy[1], (MAX_PATH_DEPTH - 1) * sizeof(DE*));
+    cwdLevel = cwdLevelCopy;
+
+    freeCwdStack(cwdStackCopy);
 }
 
 char* cwdBuildAbsPath() {
@@ -509,8 +512,6 @@ char* cwdBuildAbsPath() {
 }
 
 int setcwdInternal(const char* path) {
-    printf("setting cwd, current cwdLevel = %d\n", cwdLevel);
-
     vcb* pVcb = _getGlobalVCB();
     if (pVcb == NULL) {
         printf("Could not fetch global VCB instance\n");
@@ -523,19 +524,13 @@ int setcwdInternal(const char* path) {
         return -1;
     }
 
-    // use parsePath to check for path validity
-    ppinfo ppreturn;
-    int r = ParsePath(path, &ppreturn);
-    if (r != 0) {
-        printf("Path was not parseable\n");
-        return r;
-    }
-
-    // save cwd state so we can restore it if things go wrong
-    if (saveCwdState() != 0) {
-        printf("Could not save cwd state\n");
-        return -1;
-    }
+    // // use parsePath to check for path validity
+    // ppinfo ppreturn;
+    // int r = ParsePath(path, &ppreturn);
+    // if (r != 0) {
+    //     printf("Path was not parseable\n");
+    //     return r;
+    // }
 
     // we are tokenizing again
     // NOTE: this contains some duplicate code from parsePath; however, splitting
@@ -575,7 +570,7 @@ int setcwdInternal(const char* path) {
         return -1;
     }
 
-    uint32_t parentEntryCount = parent[0].size / pVcb->blockSize;
+    uint32_t parentEntryCount = parent[0].size / sizeof(DE);
 
     // start walking up the path
     while (1) {
@@ -595,22 +590,10 @@ int setcwdInternal(const char* path) {
             // find token in current directory
             int idx = findInDirectory(parent, parentEntryCount, token);
             if (idx < 0) {
-                free(pathCopy);
                 restoreCwdState();
+                free(pathCopy);
                 printf("could not find token in current directory\n");
                 return idx;
-            }
-
-            // add that directory entry to stack
-            free(parent);
-            parent = loadDirectory(cwdStack[cwdLevel]->location,
-                                        cwdStack[cwdLevel]->size,
-                                        pVcb->blockSize);
-            if (parent == NULL) {
-                free(pathCopy);
-                restoreCwdState();
-                printf("Could not load directory\n");
-                return -1;
             }
 
             // increment cwd level, but be careful not to overshoot MAX_PATH_DEPTH
@@ -624,12 +607,26 @@ int setcwdInternal(const char* path) {
 
             cwdStack[cwdLevel] = malloc(sizeof(DE));
             memcpy(cwdStack[cwdLevel], &parent[idx], sizeof(DE));
+
         }
 
         token = strtok_r(saveptr, "/", &saveptr);
         if (token == NULL) {
             return 0;
         }
+
+        // load new parent directory into memory
+        free(parent);
+        parent = loadDirectory(cwdStack[cwdLevel]->location,
+                                    cwdStack[cwdLevel]->size,
+                                    pVcb->blockSize);
+        if (parent == NULL) {
+            free(pathCopy);
+            restoreCwdState();
+            printf("Could not load directory\n");
+            return -1;
+        }
+        parentEntryCount = parent[0].size / sizeof(DE);
     }
 }
 
@@ -640,13 +637,12 @@ DE* getcwdInternal() {
 // helper functions for directory creation
 
 int addEntryToDirectory(DE* parent, DE* newEntry) {
-    printf("addEntryToDirectory: 1\n");
     // get global VCB
     vcb* globalVCB = _getGlobalVCB();
     if (globalVCB == NULL) {
         return -1;
     }
-    printf("addEntryToDirectory: 2\n");
+    
     uint32_t numEntries = parent->size / sizeof(DE);
 
     DE* loadedDir = loadDirectory(parent->location, parent->size, globalVCB->blockSize);
@@ -662,7 +658,7 @@ int addEntryToDirectory(DE* parent, DE* newEntry) {
             break;
         }
     }
-    printf("addEntryToDirectory: 3\n");
+    
     // if we couldn't insert, allocate more space in directory
     if (insertionIdx == 0) {
         // check if we need to allocate more blocks
