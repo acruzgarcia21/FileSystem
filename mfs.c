@@ -1,3 +1,18 @@
+/**************************************************************
+* Class::  CSC-415-0# Spring 2024
+* Name:: Ronin Lombardino
+* Student IDs:: 924363164
+* GitHub-Name:: RookAteMySSD
+* Group-Name:: Team #1 Victory Royal
+* Project:: Basic File System
+*
+* File:: mfs.h
+*
+* Description:: 
+*	
+*
+**************************************************************/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

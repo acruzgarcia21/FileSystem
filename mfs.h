@@ -1,9 +1,9 @@
 /**************************************************************
 * Class::  CSC-415-0# Spring 2024
-* Name::
-* Student IDs::
-* GitHub-Name::
-* Group-Name::
+* Name:: Ronin Lombardino
+* Student IDs:: 924363164
+* GitHub-Name:: RookAteMySSD
+* Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System
 *
 * File:: mfs.h
@@ -27,8 +27,8 @@
 #include "fsDirectory.h"
 
 #include <dirent.h>
-#define FT_REGFILE	DT_REG
-#define FT_DIRECTORY DT_DIR
+#define FT_REGFILE	'F' //DT_REG
+#define FT_DIRECTORY 'D' //DT_DIR
 #define FT_LINK	DT_LNK
 
 #ifndef uint64_t
