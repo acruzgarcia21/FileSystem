@@ -24,6 +24,8 @@
 // size of name field in struct; value chosen to eliminate internal padding
 #define DE_NAME_MAX 47
 
+#define MAX_PATH_DEPTH 50
+
 // Flag bit masks
 #define DE_IS_DIR 0x01  // 0000 0001 - directory
 #define DE_IS_USED 0x80 // 1000 0000 - used entry
@@ -69,5 +71,15 @@ int ParsePath(const char* path, ppinfo* ppi);
 // helper functions used by ParsePath
 int findInDirectory(DE* dir, int entryCount, const char* name);
 int isDEaDir(DE* entry);
+
+// cwd functions
+char* cwdBuildAbsPath();
+DE* getcwdInternal();
+int setcwdInternal(const char* path);
+
+// temporary directory functions
+int addEntryToDirectory(DE* parent, DE* newEntry);
+int removeEntryFromDirectory(uint32_t dirLocation, uint32_t dirSize, const char* entryName);
+int isDirectoryEmpty(DE* dir, uint32_t entryIdx);
 
 #endif

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include "mfs.h"
 #include "fsVCB.h"
 #include "fsDirectory.h"
@@ -96,7 +97,7 @@ int fs_mkdir(const char *pathname, mode_t mode) {
     uint32_t parentLocation = ppi.parent[0].location;
     uint32_t parentSize = ppi.parent[0].size;
     
-    int addResult = addEntryToDirectory(parentLocation, parentSize, &newEntry);
+    int addResult = addEntryToDirectory(ppi.parent, &newEntry);
     
     free(ppi.parent);
     free(ppi.lastElementName);
@@ -122,7 +123,7 @@ int fs_rmdir(const char *pathname) {
     }
     
     vcb* pVCB = _getGlobalVCB();
-    CWD* cwd = getCWD();
+    DE* cwd = getcwdInternal();
     ppinfo ppi;
     
     int result = ParsePath(pathname, &ppi);
