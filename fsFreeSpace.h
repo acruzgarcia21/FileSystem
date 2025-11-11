@@ -26,6 +26,9 @@
 // initialize FAT, write to disk, update vcb
 int initFAT(vcb* pVCB);
 
+// free up all FAT resources
+void uninitFAT();
+
 // load FAT into memory
 int loadFAT(vcb* pVCB);
 

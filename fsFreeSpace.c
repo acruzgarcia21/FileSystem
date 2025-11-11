@@ -71,6 +71,10 @@ int initFAT(vcb* pVCB) {
     return 0;
 }
 
+void uninitFAT() {
+    free(fat);
+}
+
 int loadFAT(vcb* pVCB) {
     // check if FAT is somehow already allocated
     if (fat != NULL) {

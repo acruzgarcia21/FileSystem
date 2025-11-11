@@ -447,7 +447,10 @@ void freeCwdStack(DE** stackToFree) {
 
 void freeCwdMemory() {
     freeCwdStack(cwdStack);
+    freeCwdStack(cwdStackCopy);
+
     free(rootDirectory);
+    rootDirectory = NULL;
 }
 
 int saveCwdState() {
@@ -524,13 +527,13 @@ int setcwdInternal(const char* path) {
         return -1;
     }
 
-    // // use parsePath to check for path validity
-    // ppinfo ppreturn;
-    // int r = ParsePath(path, &ppreturn);
-    // if (r != 0) {
-    //     printf("Path was not parseable\n");
-    //     return r;
-    // }
+    // use parsePath to check for path validity
+    ppinfo ppreturn;
+    int r = ParsePath(path, &ppreturn);
+    if (r != 0) {
+        printf("Path was not parseable\n");
+        return r;
+    }
 
     // we are tokenizing again
     // NOTE: this contains some duplicate code from parsePath; however, splitting
@@ -630,6 +633,8 @@ int setcwdInternal(const char* path) {
 
         token = strtok_r(saveptr, "/", &saveptr);
         if (token == NULL) {
+            free(pathCopy);
+            free(parent);
             return 0;
         }
 
@@ -694,6 +699,17 @@ int addEntryToDirectory(DE* parent, DE* newEntry) {
         }
         // set insertion index to new final entry
         insertionIdx = numEntries;
+
+        // reload directory and set new size
+        free(loadedDir);
+        loadedDir = loadDirectory(parent->location,
+                                  parent->size + sizeof(DE),
+                                  globalVCB->blockSize);
+        if (loadedDir == NULL) {
+            return -1;
+        }
+        loadedDir[0].size += sizeof(DE);
+        parent->size += sizeof(DE);
     }
 
     // copy in the new entry to its proper place
@@ -706,6 +722,10 @@ int addEntryToDirectory(DE* parent, DE* newEntry) {
     if (r != numBlocks) {
         return -1;
     }
+
+    // release resources
+    free(loadedDir);
+
     return 0;
 }
 
@@ -750,4 +770,8 @@ int isDirectoryEmpty(DE* dir, uint32_t numEntries) {
 
     // reaching this point means we didn't see a used entry, so return true
     return 1;
+}
+
+void uninitCwdSystem() {
+    freeCwdMemory();
 }

@@ -77,6 +77,7 @@ char* cwdBuildAbsPath();
 DE* getcwdInternal();
 int setcwdInternal(const char* path);
 int initCwdAtRoot();
+void freeCwdMemory();
 
 // temporary directory functions
 int addEntryToDirectory(DE* parent, DE* newEntry);
