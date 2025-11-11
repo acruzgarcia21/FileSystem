@@ -36,7 +36,7 @@ uint32_t allocateBlocks(uint32_t numBlocks);
 int freeBlocks(uint32_t startBlock);
 
 // resize allocated blocks
-int resizeBlocks(uint32_t startBlock, int newSize);
+int resizeBlocks(uint32_t startBlock, uint32_t newSize);
 
 // get blocknum of certain offset
 uint32_t getBlockOfFile(uint32_t startBlock, uint32_t offset);

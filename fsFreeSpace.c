@@ -182,7 +182,7 @@ int freeBlocks(uint32_t startBlock) {
     return 0;
 }
 
-int resizeBlocks(uint32_t startBlock, int newSize) {
+int resizeBlocks(uint32_t startBlock, uint32_t newSize) {
 
     // ensure that fat is initialized (mounted)
     if (global_pVCB == NULL || fat == NULL) {
@@ -194,13 +194,15 @@ int resizeBlocks(uint32_t startBlock, int newSize) {
         return freeBlocks(startBlock);
     }
 
+    uint32_t newSizeBlocks = (newSize + global_pVCB->blockSize - 1) / global_pVCB->blockSize;
+
     uint32_t currentBlock = startBlock;
     //iterate through the FAT with the start block until we hit EOF or size
-    for (int i = 0; i < newSize; i++) {
+    for (int i = 0; i < newSizeBlocks; i++) {
         //if we hit EOF, break
         if (fat[currentBlock] == FAT_EOF) {
             //if we hit EOF first, call allocateBlocks with the diffrence and append it to the end
-            fat[currentBlock] = allocateBlocks(newSize - i);
+            fat[currentBlock] = allocateBlocks(newSizeBlocks - i);
             if (fat[currentBlock] == FAT_EOF) {
                 return FAT_EOF;
             }
