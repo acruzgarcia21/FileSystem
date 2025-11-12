@@ -685,3 +685,39 @@ char * fs_getcwd(char *pathname, size_t size) {
     free(absPath);
     return pathname;
 }
+
+int fs_stat(const char *path, struct fs_stat *buf) {
+    if (path == NULL || buf == NULL) {
+        return -1;
+    }
+
+    ppinfo ppi;
+    int result = ParsePath(path, &ppi);
+
+    if (result < 0) {
+        return -1;
+    }
+
+    int blockSize = _getGlobalVCB()->blockSize;
+
+    DE * directory = loadDirectory(ppi.parent[ppi.index].location,
+              ppi.parent[ppi.index].size, blockSize);
+
+    if (!directory) {
+        free(ppi.parent);
+        free(ppi.lastElementName);
+        return -1;
+    }
+
+    buf->st_size = directory[ppi.index].size;
+    buf->st_blocks = (directory[ppi.index].size + blockSize - 1) / blockSize;
+    buf->st_accesstime = directory[ppi.index].accessed;
+    buf->st_modtime = directory[ppi.index].modified;
+    buf->st_createtime = directory[ppi.index].created;
+
+    free(directory);
+    free(ppi.parent);
+    free(ppi.lastElementName);
+
+    return 0;
+}

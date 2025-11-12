@@ -38,7 +38,7 @@ uint32_t allocateBlocks(uint32_t numBlocks);
 // free blocks from startBlock to EOF
 int freeBlocks(uint32_t startBlock);
 
-// resize allocated blocks
+// resize allocated blocks, newSize is in bytes
 int resizeBlocks(uint32_t startBlock, uint32_t newSize);
 
 // get blocknum of certain offset
