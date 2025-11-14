@@ -1,7 +1,7 @@
 /**************************************************************
 * Class::  CSC-415-0# Spring 2024
-* Name:: Ronin Lombardino
-* Student IDs:: 924363164
+* Name:: Ronin Lombardino, Alexander Tamayo
+* Student IDs:: 924363164, 921199718
 * GitHub-Name:: RookAteMySSD
 * Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System

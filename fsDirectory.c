@@ -1,7 +1,7 @@
 /**************************************************************
 * Class::  CSC-415-02 Fall 2025
-* Name:: Alejandro Cruz-Garcia, Ronin Lombardino
-* Student IDs:: 923799497, 924363164
+* Name:: Alejandro Cruz-Garcia, Ronin Lombardino, Alex Tamayo
+* Student IDs:: 923799497, 924363164, 921199718
 * GitHub-Name:: RookAteMySSD
 * Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System
@@ -82,6 +82,7 @@ int writeFileToDisk(char* data, DE* entry) {
 }
 
 int writeBlocksToDisk(char* data, uint32_t startBlock, uint32_t numBlocks) {
+
     // get global VCB
     vcb* globalVCB = _getGlobalVCB();
     if (globalVCB == NULL) {
@@ -286,9 +287,9 @@ DE* loadDirectory(uint32_t startBlock, uint32_t size, uint32_t blockSize)
     return dir;
 }
 
-// ***********************************************
-// added by Alex Tamayo 11/6/2025 @ 6pm
-// ***********************************************
+// *****************************************************************************
+// findInDirectory, isDEaDir, and ParsePath added by Alex Tamayo 11/6/2025 @ 6pm
+// *****************************************************************************
 
 int findInDirectory(DE* dir, int entryCount, const char* name) {
     for (int i = 0; i < entryCount; i++) {
@@ -299,11 +300,13 @@ int findInDirectory(DE* dir, int entryCount, const char* name) {
     return -1;
 }
 
+// checks if directory entry is a directory using standard linux errno library
 int isDEaDir(DE* entry) {
-    return (entry->flags & DE_IS_DIR) != 0;
+    return (entry->flags & DE_IS_DIR) != 0; 
 }
 
-int ParsePath(const char* path, ppinfo* ppi) {
+//ParsePath provided by professor, with additional error handling
+int ParsePath(const char* path, ppinfo* ppi) { 
     vcb* pVCB = _getGlobalVCB();
     DE* cwd = getcwdInternal();
     
@@ -317,21 +320,23 @@ int ParsePath(const char* path, ppinfo* ppi) {
     
     // Make copy since strtok_r modifies the string
     char* pathCopy = strdup(path);
-    if (!pathCopy) return -1;
+    if (!pathCopy) return -1; // TODO error message
     
     // determine starting directory
     if (path[0] == '/') {
+	// path parsing starts at root directory
         startParent = loadDirectory(pVCB->rootStart, pVCB->rootSize, pVCB->blockSize);
     } else {
+	// path parsing starts at current working directory
         startParent = loadDirectory(cwd->location, cwd->size, pVCB->blockSize);
     }
     
     if (!startParent) {
-        free(pathCopy);
+        free(pathCopy); // free memory, return error TODO: error message
         return -1;
     }
     
-    parent = startParent;
+    parent = startParent; 
     int parentEntryCount = (path[0] == '/') ? 
                            (pVCB->rootSize / sizeof(DE)) : 
                            (cwd->size / sizeof(DE));
@@ -349,7 +354,7 @@ int ParsePath(const char* path, ppinfo* ppi) {
             return 0;
         } else {
             if (parent != startParent) free(parent);
-            free(pathCopy);
+            free(pathCopy); // TODO error message
             return -1;
         }
     }
@@ -397,7 +402,7 @@ int ParsePath(const char* path, ppinfo* ppi) {
         parentEntryCount = parent[idx].size / sizeof(DE);
         
         if (parent != startParent) {
-            free(parent);
+            free(parent); 
         }
         
         parent = tempParent;
