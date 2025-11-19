@@ -19,16 +19,31 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+
 #include "b_io.h"
+#include "fsVCB.h"
+#include "fsDirectory.h"
+#include "fsLow.h"
+#include "fsFreeSpace.h"
 
 #define MAXFCBS 20
 
 typedef struct b_fcb
 	{
 	/** TODO add al the information you need in the file control block **/
-	char * buf;		//holds the open file buffer
-	int index;		//holds the current position in the buffer
-	int buflen;		//holds how many valid bytes are in the buffer
+	char * buf;			 //holds the open file buffer
+	int index;			 //holds the current position in the buffer
+	int buflen;			 //holds how many valid bytes are in the buffer
+
+	uint32_t startBlock; // first data block (FAT head)
+	uint32_t fileSize;   // Current file size in bytes
+	uint32_t filePOS;	 // Byte Cursor within file
+	int bufBlockIdx;	 // Which logical file block is cached in buf, -1 if none
+	int bufDirty; 		 // 1 if buffer must be flushed to disk
+	int flags;			 // O_RDONLY, O_WRONLY, O_RDWR, O_APPEND
+	uint32_t blockSize;  // VCB block size
+
+	int inUse;			 // Mark FCB used
 	} b_fcb;
 	
 b_fcb fcbArray[MAXFCBS];
@@ -95,8 +110,70 @@ int b_seek (b_io_fd fd, off_t offset, int whence)
 	return (0); //Change this
 	}
 
+// Reads the logical block 'lbIdx' of this file into f->buf and updates f->buflen.
+// Returns 0 on success, -1 on error/EOF
+int loadBlock(b_fcb* f, uint32_t lbIdx)
+{
+	uint32_t lba = getBlockOfFile(f->startBlock, lbIdx);
+		
+	if(lba == FAT_EOF || lba == FAT_RESERVED) return -1;
+	if(LBAread(f->buf, 1, lba) != 1) return -1;
 
+	// Compute how many bytes are valid in this block (EOF)
+	uint32_t blocksStartByte = lbIdx * f->blockSize;
+	uint32_t bytesLeft = (f->fileSize > blocksStartByte) ? (f->fileSize - blocksStartByte) : 0;
+	f->buflen = (bytesLeft < f->blockSize) ? (int)bytesLeft : (int)f->blockSize;
+	f->index = 0;
+	f->bufBlockIdx = (int)lbIdx;
+	return 0;
+}
 
+// Flush dirty buffer block back to disk
+int flushBlock(b_fcb* f)
+{
+	if(!f->bufDirty || f->bufBlockIdx < 0) return 0;
+	uint32_t lba = getBlockOfFile(f->startBlock, (uint32_t)f->bufBlockIdx);
+
+	if(lba == FAT_EOF || lba == FAT_RESERVED) return -1;
+	if(LBAwrite(f->buf, 1, lba) != 1) return -1;
+	f->bufDirty = 0;
+	return 0;
+}
+
+// Make sure the block for filePOS exists and is loaded into f->buf
+int ensureBlockForWrite(b_fcb* f)
+{
+	uint32_t lbIdx = (uint32_t)(f->filePOS / f->blockSize);
+
+	// If buffer already holds this block, good
+	if(f->bufBlockIdx == (int)lbIdx) return 0;
+
+	// Try loading the block (it exists already)
+	if(loadBlock(f, lbIdx) == 0) return 0;
+
+	// If loading failed we may need to grow the FAT chain.
+	// How many blocks does the file currently have
+	uint32_t currentBlocks = 
+		(f->fileSize + f->blockSize - 1) / f->blockSize;
+
+	// if lbIdx is inside current logical size, this is a real error
+	if(lbIdx < currentBlocks) return -1;
+
+	// Otherwise we need to grow: Make sure the chain is at least lbIdx + 1 blocks
+	uint32_t newByteSize = (lbIdx + 1) * f->blockSize;
+
+	// Resize the chain
+	int r = resizeBlocks(f->startBlock, newByteSize);
+	if(r == FAT_EOF || r < 0) return -1;
+
+	// Reload the block after growth
+	if(loadBlock(f, lbIdx) < 0) return -1;
+
+	return 0;
+}
+
+// Write to the buffer where you position is
+// look out for flags
 // Interface to write function	
 int b_write (b_io_fd fd, char * buffer, int count)
 	{
@@ -104,13 +181,60 @@ int b_write (b_io_fd fd, char * buffer, int count)
 
 	// check that fd is between 0 and (MAXFCBS-1)
 	if ((fd < 0) || (fd >= MAXFCBS))
-		{
-		return (-1); 					//invalid file descriptor
-		}
-		
-		
-	return (0); //Change this
+	{
+		return (-1); 				 //invalid file descriptor
 	}
+
+	b_fcb* f = &fcbArray[fd];
+	if(f->buf == NULL) return -1;   // Not open/initialized
+	if(count <= 0) return 0;
+
+	int total = 0;
+
+	while(total < count)
+	{
+		// Ensure the correct FAT block exists & is loaded
+		if(ensureBlockForWrite(f) < 0)
+			return (total ? total : -1);
+
+		// Determine the offset inside this block
+		f->index = (int)(f->filePOS % f->blockSize);
+		if(f->index > (int)f->blockSize) 
+		{
+			f->index = (int)f->blockSize;
+		}
+
+		int space = (int)f->blockSize - f->index;  // Free space in this block
+		int want  = count - total;				   // Bytes we still need to write
+		int n     = (space < want) ? space : want; // Bytes to write this iteration
+
+		// Copy user bytes into buffer
+		memcpy(f->buf + f->index, buffer + total, n);
+
+		// Mark dirty and advance pointers
+		f->bufDirty = 1;
+		f->index    += n;
+		f->filePOS  += (uint32_t)n;
+		total       += n;
+		
+		// If file grew past old size, update size
+		if(f->filePOS > f->fileSize) 
+		{
+			f->fileSize = f->filePOS;
+		}
+
+		// If block is full, flush now
+		if(f->index == (int)f->blockSize)
+		{
+			if(flushBlock(f) < 0)
+				return (total ? total : -1);
+
+			// Force ensureBlockWrite() to load the next block
+			f->bufBlockIdx = -1; 
+		}
+	}
+	return total;
+}
 
 
 
@@ -140,11 +264,97 @@ int b_read (b_io_fd fd, char * buffer, int count)
 
 	// check that fd is between 0 and (MAXFCBS-1)
 	if ((fd < 0) || (fd >= MAXFCBS))
-		{
+	{
 		return (-1); 					//invalid file descriptor
+	}
+
+	b_fcb* f = &fcbArray[fd];
+	if(f->buf == NULL) return -1;					  // Not open
+	if(count <= 0) return 0;					      // Nothing to do
+	if((uint32_t)f->filePOS >= f->fileSize) return 0; // EOF
+
+	int total = 0;
+
+	while(total < count)
+	{
+		// Part 1: Use any bytes left in our current buffer 
+		// Make sure the buffer we hold corresponds to the logical block of filePOS
+		uint32_t needLbIdx = (uint32_t)(f->filePOS / f->blockSize);
+		if(f->bufBlockIdx != (int)needLbIdx)
+		{
+			if(loadBlock(f, needLbIdx) < 0) break;
 		}
+
+		// Copy the current buffer first (may be 0 if exavtly at a boundry)
+		int offsetInBlock = (int)(f->filePOS % f->blockSize);
+		int available = f->buflen - offsetInBlock;
+		if(available > 0)
+		{
+			int want = count - total;
+			int toCopy = (available < want) ? available : want;
+			memcpy(buffer + total, f->buf + offsetInBlock, (size_t)toCopy);
+			f->filePOS += toCopy;
+			total += toCopy;
+
+			// If we satisfied the request or reached EOF, we're done
+			if(total >= count || (uint32_t)f->filePOS >= f->fileSize) break;
+			
+			// If we still want more but we're not block-algned yet, continue the block;
+
+		}
+
+		// Part 2: Fast path for full blocks (direct into caller buf)
+		// We are either at a block boundry or the current buffer had no usable bytes
+		// If the caller still wants >= one full block, read whole blocks straight into buffer
+		if((f->filePOS % f->blockSize) == 0 && (count - total) >= (int)f->blockSize)
+		{
+			// How many whole blocks can we deliver without passing EOF?
+			uint32_t bytesLeftInFile = (f->fileSize > (uint32_t)f->filePOS)
+									 ? (f->fileSize - (uint32_t)f->filePOS) : 0;
+			int maxBlocksByFile = (int)(bytesLeftInFile / f->blockSize);
+			int maxBlocksByWant = (count - total) / (int)f->blockSize;
+			int blocksToRead = (maxBlocksByFile < maxBlocksByWant) 
+							 ? maxBlocksByFile : maxBlocksByWant; 
+
+			if(blocksToRead <= 0) break;
+
+			uint32_t baseLBIdx = (uint32_t)(f->filePOS / f->blockSize);
+			int actualReadBlocks = 0;
+
+			// Walk the FAT chain one block at a time
+			for(int i = 0; i < blocksToRead; i++)
+			{
+				uint32_t lba = getBlockOfFile(f->startBlock, baseLBIdx + (uint32_t)i);
+				if(lba == FAT_EOF || lba == FAT_RESERVED) break;
+
+				if(LBAread(buffer + total + i * (int)f->blockSize, 1, lba) != 1) break;
+
+				actualReadBlocks++;
+			}
+
+			if(actualReadBlocks <= 0) break; // Couldn't deliver more
+
+			int bytes = actualReadBlocks * (int)f->blockSize;
+			f->filePOS += bytes;
+			total += bytes;
+			f->bufBlockIdx = -1; // Force a reload when we fall back to buffered reads
+
+			if((uint32_t)f->filePOS >= f->fileSize || total >= count) break;
+
+			// After the fast path, loop back; Part 1 will pick up the tail if any
+			continue;
+		}
+
+		// Part 3: Tail that's smaller than a block;
+		// Load (or reload) the exact block that contains the current filePOS
+		// and let the next iteration's part 1 copy the remaining tail
+		if(loadBlock(f, (uint32_t)f->filePOS / f->blockSize) < 0) break;
+
+		// Loop continues
+		// Part 1 will copy the leftover < blocksize
+	}
 		
-	return (0);	//Change this
+	return total;
 	}
 	
 // Interface to Close the file	

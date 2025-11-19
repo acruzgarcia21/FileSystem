@@ -1,14 +1,14 @@
 /**************************************************************
-* Class::  CSC-415-0# Spring 2024
-* Name::
-* Student IDs::
-* GitHub-Name::
-* Group-Name::
+* Class::  CSC-415-02 Fall 2025
+* Name:: Alejandro Cruz-Garcia
+* Student IDs:: 923799497
+* GitHub-Name:: RookAteMySSD
+* Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System
 *
 * File:: b_io.h
 *
-* Description:: Interface of basic I/O Operations
+* Description:: Interface of basic I/O Operations along with helpers
 *
 **************************************************************/
 
