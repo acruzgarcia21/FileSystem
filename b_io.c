@@ -44,6 +44,10 @@ typedef struct b_fcb
 	uint32_t blockSize;  // VCB block size
 
 	int inUse;			 // Mark FCB used
+
+	DE* parentDirectory;	// the parent directory loaded into memory so that
+							// we can change modified time, e.g.
+	int directoryIndex;		// index within the parent directory
 	} b_fcb;
 	
 b_fcb fcbArray[MAXFCBS];
@@ -85,11 +89,113 @@ b_io_fd b_open (char * filename, int flags)
 	//*** TODO ***:  Modify to save or set any information needed
 	//
 	//
+
+	// handle some bad flag cases
+	int count = 0;
+	if (flags & O_RDONLY) count++;
+	if (flags & O_WRONLY) count++;
+	if (flags & O_RDWR) count++;
+	if (count != 1) {
+		fprintf(stderr,
+			    "(b_open) Must specify at most 1 of flags \
+				O_RDONLY, O_WRONLY, O_RDWR.");
+		return -1;
+	}
 		
 	if (startup == 0) b_init();  //Initialize our system
 	
 	returnFd = b_getFCB();				// get our own file descriptor
 										// check for error - all used FCB's
+
+	// get current time (for later)
+	uint64_t currentTime = getCurrentTime();
+	
+	// check for error
+	if (returnFd == -1) {
+		fprintf(stderr, "(b_open) Out of file control blocks!\n");
+		return -1;
+	}
+
+	b_fcb* f = &fcbArray[returnFd];
+	f->blockSize = _getGlobalVCB()->blockSize;
+
+	// parse path and get directory entry
+	ppinfo ppi;
+	int r;
+	r = ParsePath(filename, &ppi);
+	if (r != 0) {
+		fprintf(stderr,
+				"(b_open) Could not parse filename %s; return code = %d\n",
+				filename, r);
+		return r;
+	}
+
+	// handle O_CREAT; create file if it does not exist
+	if (ppi.index == -1) {
+		if (flags & O_CREAT) {
+			// create file and get index
+			int newIndex = createFile(filename, ppi.parent);
+			if (newIndex == -1) {
+				free(ppi.parent);
+				return -1;
+			}
+
+			// reload ppi parent directory
+			uint32_t reloadLocation = ppi.parent[0].location;
+			uint32_t reloadSize = ppi.parent[0].size;
+			free(ppi.parent);
+			ppi.parent = loadDirectory(reloadLocation, reloadSize, f->blockSize);
+			if (ppi.parent == NULL) {
+				return -1;
+			}
+
+			// assign new index
+			ppi.parent = newIndex;
+		} else {
+			// file does not exist and we are not creating it, so we can't
+			// do anything and must exit
+			free(ppi.parent);
+			return -1;
+		}
+	}
+
+	// get pointer to the relevant directory entry
+	DE* fileEntry = &ppi.parent[ppi.index];
+
+	// handle O_TRUNC
+	if (flags & O_TRUNC) {
+		// free disk space, set size to 0, and write DE to disk
+		freeBlocks(fileEntry->location);
+		fileEntry->size = 0;
+		fileEntry->modified = currentTime;
+
+		writeBlocksToDisk((char *)ppi.parent,
+						  ppi.parent[0].location,
+						  (ppi.parent[0].size + f->blockSize - 1) / f->blockSize);
+	}
+
+	// handle O_APPEND
+	if (flags & O_APPEND) {
+		// set filePOS to size of file
+		f->filePOS = ppi.parent[ppi.index].size;
+	} else {
+		// otherwise, start at 0
+		f->filePOS = 0;
+	}
+
+	// populate buffer, but not if we are on a block boundary!
+	if (f->filePOS / f->blockSize != 0) {
+		loadBlock(f, f->filePOS / f->blockSize);
+	}
+
+	// set access flags
+	f->flags = flags;
+
+	// set file accessed timestamp and write DE back to disk
+	fileEntry->accessed = currentTime;
+
+	// if we get to this point, all is valid, so mark FCB as used
+	f->inUse = 1;
 	
 	return (returnFd);						// all set
 	}
@@ -358,7 +464,34 @@ int b_read (b_io_fd fd, char * buffer, int count)
 	}
 	
 // Interface to Close the file	
-int b_close (b_io_fd fd)
-	{
-
+int b_close (b_io_fd fd) {
+	// handle a bad input
+	if (fd < 0 || fd >= MAXFCBS) {
+		fprintf(stderr,
+				"(b_close) File descriptor must be between 0 and %d.\n",
+				MAXFCBS);
+		return -1;
 	}
+
+	// get pointer to our fcb
+	b_fcb* f = &fcbArray[fd];
+
+	// if entry is already closed, report an issue
+	if (!f->inUse) {
+		fprintf(stderr, "(b_close) Attempted to close an already closed file.\n");
+		return -1;
+	}
+
+	// free the data buffer
+	free(f->buf);
+	f->buf = NULL;
+
+	// free the parent directory
+	free(f->parentDirectory);
+	f->parentDirectory = NULL;
+
+	// mark as unused
+	f->inUse = 0;
+
+	return 0;
+}

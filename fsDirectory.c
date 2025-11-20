@@ -227,6 +227,28 @@ DE* createDir(int count, const DE* parent, int blockSize)
     return dir;
 }
 
+int createFile(const char* filename, DE* parent) {
+    // create entry for new file
+    DE newEntry;
+
+    // set time values
+    uint64_t currentTime = getCurrentTime();
+    newEntry.accessed = currentTime;
+    newEntry.created = currentTime;
+    newEntry.modified = currentTime;
+
+    // set other properties
+    newEntry.size = 0;
+    newEntry.flags = DE_IS_USED;
+
+    // copy name into DE buffer
+    strncpy(newEntry.name, filename, DE_NAME_MAX);
+
+    // add entry to the directory
+    int r = addEntryToDirectory(parent, &newEntry);
+    return r;
+}
+
 //Get the current time in secionds as a uint32_t
 uint64_t getCurrentTime() {
     time_t now = time(NULL);
@@ -731,7 +753,7 @@ int addEntryToDirectory(DE* parent, DE* newEntry) {
     // release resources
     free(loadedDir);
 
-    return 0;
+    return insertionIdx;
 }
 
 int removeEntryFromDirectory(DE* parent, const char* entryName) {
