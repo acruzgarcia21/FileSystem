@@ -216,7 +216,7 @@ DE* createDir(int count, const DE* parent, int blockSize)
     // We pass the table as raw bytes (char*) and the entry that
     // contains size/location (dir[0]) so the writer knows how much to write
     // and where the FAT chain begins
-    printf("writing to disk, location = %ld, blocksNeeded = %d\n", dir[0].location, blocksNeeded);
+    printf("writing to disk, location = %d, blocksNeeded = %d\n", dir[0].location, blocksNeeded);
     int r = writeBlocksToDisk((char*)dir, dir[0].location, blocksNeeded);
     if(r != blocksNeeded)
     {

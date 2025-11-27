@@ -54,6 +54,24 @@ b_fcb fcbArray[MAXFCBS];
 
 int startup = 0;	//Indicates that this has not been initialized
 
+// Reads the logical block 'lbIdx' of this file into f->buf and updates f->buflen.
+// Returns 0 on success, -1 on error/EOF
+int loadBlock(b_fcb* f, uint32_t lbIdx)
+{
+	uint32_t lba = getBlockOfFile(f->startBlock, lbIdx);
+		
+	if(lba == FAT_EOF || lba == FAT_RESERVED) return -1;
+	if(LBAread(f->buf, 1, lba) != 1) return -1;
+
+	// Compute how many bytes are valid in this block (EOF)
+	uint32_t blocksStartByte = lbIdx * f->blockSize;
+	uint32_t bytesLeft = (f->fileSize > blocksStartByte) ? (f->fileSize - blocksStartByte) : 0;
+	f->buflen = (bytesLeft < f->blockSize) ? (int)bytesLeft : (int)f->blockSize;
+	f->index = 0;
+	f->bufBlockIdx = (int)lbIdx;
+	return 0;
+}
+
 //Method to initialize our file system
 void b_init ()
 	{
@@ -150,7 +168,7 @@ b_io_fd b_open (char * filename, int flags)
 			}
 
 			// assign new index
-			ppi.parent = newIndex;
+			ppi.index = newIndex;
 		} else {
 			// file does not exist and we are not creating it, so we can't
 			// do anything and must exit
@@ -216,23 +234,7 @@ int b_seek (b_io_fd fd, off_t offset, int whence)
 	return (0); //Change this
 	}
 
-// Reads the logical block 'lbIdx' of this file into f->buf and updates f->buflen.
-// Returns 0 on success, -1 on error/EOF
-int loadBlock(b_fcb* f, uint32_t lbIdx)
-{
-	uint32_t lba = getBlockOfFile(f->startBlock, lbIdx);
-		
-	if(lba == FAT_EOF || lba == FAT_RESERVED) return -1;
-	if(LBAread(f->buf, 1, lba) != 1) return -1;
 
-	// Compute how many bytes are valid in this block (EOF)
-	uint32_t blocksStartByte = lbIdx * f->blockSize;
-	uint32_t bytesLeft = (f->fileSize > blocksStartByte) ? (f->fileSize - blocksStartByte) : 0;
-	f->buflen = (bytesLeft < f->blockSize) ? (int)bytesLeft : (int)f->blockSize;
-	f->index = 0;
-	f->bufBlockIdx = (int)lbIdx;
-	return 0;
-}
 
 // Flush dirty buffer block back to disk
 int flushBlock(b_fcb* f)

@@ -52,6 +52,8 @@ typedef struct ppinfo {
 
 // Initializer for root directory/any directory
 DE* createDir(int count, const DE* parent, int blockSize);
+// create a file (and write DE to disk)
+int createFile(const char* filename, DE* parent);
 // write a file to disk
 int writeFileToDisk(char* data, DE* entry);
 // write raw blocks to disk in allocated blocks; return number of blocks
