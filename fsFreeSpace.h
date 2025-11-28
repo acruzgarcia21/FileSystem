@@ -40,6 +40,7 @@ int freeBlocks(uint32_t startBlock);
 
 // resize allocated blocks, newSize is in bytes
 int resizeBlocks(uint32_t startBlock, uint32_t newSize);
+int resizeBlocksSmart(uint32_t startBlock, uint32_t newSize, uint32_t oldSize);
 
 // get blocknum of certain offset
 uint32_t getBlockOfFile(uint32_t startBlock, uint32_t offset);

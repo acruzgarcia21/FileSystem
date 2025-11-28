@@ -118,6 +118,7 @@ int fs_mkdir(const char *pathname, mode_t mode) {
     free(ppi.lastElementName);
     
     if (addResult != 0) {
+        printf("what's all this then? %d\n", addResult);
         freeBlocks(newEntry.location);
         return -1;
     }
@@ -303,8 +304,14 @@ struct fs_diriteminfo *fs_readdir(fdDir *dirp) {
         return NULL;
     }
 
+    DE currentEntry;
+    
     //get the current directory entry
-    DE currentEntry = dirp->directory[dirp->dirEntryPosition];
+    do {
+        currentEntry = dirp->directory[dirp->dirEntryPosition];
+        dirp->dirEntryPosition++;
+    } while (!(currentEntry.flags & DE_IS_USED) 
+                && dirp->dirEntryPosition < dirp->d_reclen);
 
     //populate the fs_diriteminfo struct
     struct fs_diriteminfo * diritem =  dirp->di; //refrence ptr
@@ -317,9 +324,6 @@ struct fs_diriteminfo *fs_readdir(fdDir *dirp) {
     }
 
     strcpy(diritem->d_name, currentEntry.name);
-
-    //increment position for next read
-    dirp->dirEntryPosition += 1;
 
     return dirp->di;
 }

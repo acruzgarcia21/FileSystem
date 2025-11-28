@@ -160,6 +160,7 @@ int freeBlocks(uint32_t startBlock) {
     uint32_t fileEnd = startBlock;
     uint32_t fileEndPtr;
     while (fileEnd != FAT_EOF && fileEnd != FAT_RESERVED) {
+        printf("fileEnd is 0x%x\n", fileEnd);
         fileEndPtr = fileEnd;
         fileEnd = fat[fileEnd];
     }
@@ -186,6 +187,36 @@ int freeBlocks(uint32_t startBlock) {
     return 0;
 }
 
+int resizeBlocksSmart(uint32_t startBlock, uint32_t newSize, uint32_t oldSize) {
+    uint32_t blockSize = global_pVCB->blockSize;
+
+    if (newSize == 0) {
+        return freeBlocks(startBlock);
+    }
+
+    if (newSize == oldSize) {
+        return 0;
+    }
+
+    if (newSize < oldSize) {
+        uint32_t blockToStartFreeing = (newSize / blockSize) + 1;
+        return freeBlocks(getBlockOfFile(startBlock, blockToStartFreeing));
+    } else {
+        uint32_t previousLastBlock = getBlockOfFile(startBlock, oldSize / blockSize);
+        uint32_t oldNumBlocks = (oldSize + blockSize - 1) / blockSize;
+        uint32_t newNumBlocks = (newSize + blockSize - 1) / blockSize;
+        fat[previousLastBlock] = allocateBlocks(newNumBlocks - oldNumBlocks);
+
+        uint64_t result = LBAwrite(fat, global_pVCB->fatNumBlocks, global_pVCB->fatStart);
+        if (result != global_pVCB->fatNumBlocks) {
+            printf("for some reason our write...failed! %ld\n", result);
+            return -1;
+        }
+
+        return 0;
+    }
+}
+
 int resizeBlocks(uint32_t startBlock, uint32_t newSize) {
 
     // ensure that fat is initialized (mounted)
@@ -199,6 +230,7 @@ int resizeBlocks(uint32_t startBlock, uint32_t newSize) {
     }
 
     uint32_t newSizeBlocks = (newSize + global_pVCB->blockSize - 1) / global_pVCB->blockSize;
+    printf("new size in blocks is %d\n", newSizeBlocks);
 
     uint32_t currentBlock = startBlock;
     //iterate through the FAT with the start block until we hit EOF or size
@@ -215,6 +247,7 @@ int resizeBlocks(uint32_t startBlock, uint32_t newSize) {
         currentBlock = fat[currentBlock];
     }
 
+    printf("got past the loop; calling freeBlocks\n");
     //if we hit size first, call freeBlocks on the next block after size and update the EOF sentinel
     freeBlocks(fat[currentBlock]);
     fat[currentBlock] = FAT_EOF;
