@@ -46,8 +46,10 @@ typedef struct b_fcb
 	int inUse;			 // Mark FCB used
 
 	DE* parentDirectory;	// the parent directory loaded into memory so that
-							// we can change modified time, e.g.
 	int directoryIndex;		// index within the parent directory
+
+	int canRead;
+	int canWrite;
 	} b_fcb;
 	
 b_fcb fcbArray[MAXFCBS];
@@ -107,18 +109,6 @@ b_io_fd b_open (char * filename, int flags)
 	//*** TODO ***:  Modify to save or set any information needed
 	//
 	//
-
-	// handle some bad flag cases
-	int count = 0;
-	if (flags & O_RDONLY) count++;
-	if (flags & O_WRONLY) count++;
-	if (flags & O_RDWR) count++;
-	if (count != 1) {
-		fprintf(stderr,
-			    "(b_open) Must specify at most 1 of flags \
-				O_RDONLY, O_WRONLY, O_RDWR.");
-		return -1;
-	}
 		
 	if (startup == 0) b_init();  //Initialize our system
 	
@@ -137,24 +127,78 @@ b_io_fd b_open (char * filename, int flags)
 	b_fcb* f = &fcbArray[returnFd];
 	f->blockSize = _getGlobalVCB()->blockSize;
 
+	f->canRead = 0;
+	f->canWrite = 0;
+
+	// If they passed O_RDWR -> readable and writeable
+	if (flags & O_RDWR)
+	{
+		f->canRead  = 1;
+		f->canWrite = 1;
+	}
+	else if (flags & O_WRONLY)
+	{
+		f->canWrite = 1;
+	}
+	else
+	{
+		f->canRead = 1;
+	}
+	f->flags = flags;
+
+	// Allocate the file buffer
+	f->buf = (char*)malloc(f->blockSize);
+	if(!f->buf) return -1;
+
+	f->index = 0;
+	f->buflen = 0;
+	f->bufDirty = 0;
+	f->bufBlockIdx = -1;
+
 	// parse path and get directory entry
 	ppinfo ppi;
-	int r;
-	r = ParsePath(filename, &ppi);
+	int r = ParsePath(filename, &ppi);
 	if (r != 0) {
 		fprintf(stderr,
 				"(b_open) Could not parse filename %s; return code = %d\n",
 				filename, r);
-		return r;
+		if(ppi.parent) free(ppi.parent);
+		if(ppi.lastElementName) free(ppi.lastElementName);
+		free(f->buf);
+		f->buf = NULL;
+		return -1;
+	}
+
+	if(ppi.index == -2)
+	{
+		fprintf(stderr, "(b_open) Cannot open root (/) as a regular file\n");
+		if(ppi.parent) free(ppi.parent);
+		if(ppi.lastElementName) free(ppi.lastElementName);
+		free(f->buf);
+		f->buf = NULL;
+		return -1;
 	}
 
 	// handle O_CREAT; create file if it does not exist
 	if (ppi.index == -1) {
 		if (flags & O_CREAT) {
 			// create file and get index
-			int newIndex = createFile(filename, ppi.parent);
-			if (newIndex == -1) {
-				free(ppi.parent);
+			if(!ppi.lastElementName)
+			{
+				fprintf(stderr, "(b_open) No lastElementName for O_CREAT\n");
+				if(ppi.parent) free(ppi.parent);
+				free(f->buf);
+				f->buf = NULL;
+				return -1;
+			}
+
+			int newIndex = createFile(ppi.lastElementName, ppi.parent);
+			if (newIndex < 0) {
+				fprintf(stderr, "(b_open) createFile failed\n");
+				if(ppi.parent) free(ppi.parent);
+				if(ppi.lastElementName) free(ppi.lastElementName);
+				free(f->buf);
+				f->buf = NULL;
 				return -1;
 			}
 
@@ -164,6 +208,10 @@ b_io_fd b_open (char * filename, int flags)
 			free(ppi.parent);
 			ppi.parent = loadDirectory(reloadLocation, reloadSize, f->blockSize);
 			if (ppi.parent == NULL) {
+				fprintf(stderr, "(b_open) Failed to reload parent directory\n");
+				if(ppi.lastElementName) free(ppi.lastElementName);
+				free(f->buf);
+				f->buf = NULL;
 				return -1;
 			}
 
@@ -172,7 +220,10 @@ b_io_fd b_open (char * filename, int flags)
 		} else {
 			// file does not exist and we are not creating it, so we can't
 			// do anything and must exit
-			free(ppi.parent);
+			if(ppi.parent) free(ppi.parent);
+			if(ppi.lastElementName) free(ppi.lastElementName);
+			free(f->buf);
+			f->buf = NULL;
 			return -1;
 		}
 	}
@@ -180,40 +231,59 @@ b_io_fd b_open (char * filename, int flags)
 	// get pointer to the relevant directory entry
 	DE* fileEntry = &ppi.parent[ppi.index];
 
+	// Don't allow opening directories here
+	if (fileEntry->flags & DE_IS_DIR)
+	{
+		fprintf(stderr, "(b_open) %s is a directory, not a regular file\n", filename);
+		if(ppi.parent) free(ppi.parent);
+		if(ppi.lastElementName) free(ppi.lastElementName);
+		free(f->buf);
+		f->buf = NULL;
+		return -1;
+	}
+
 	// handle O_TRUNC
 	if (flags & O_TRUNC) {
-		// free disk space, set size to 0, and write DE to disk
-		freeBlocks(fileEntry->location);
+		if(fileEntry->location != 0 && fileEntry->size > 0)
+		{
+			freeBlocks(fileEntry->location);
+		}
 		fileEntry->size = 0;
+		fileEntry->location = 0;
 		fileEntry->modified = currentTime;
-
-		writeBlocksToDisk((char *)ppi.parent,
-						  ppi.parent[0].location,
-						  (ppi.parent[0].size + f->blockSize - 1) / f->blockSize);
 	}
+
+	f->startBlock = fileEntry->location;
+	f->fileSize = fileEntry->size;
 
 	// handle O_APPEND
 	if (flags & O_APPEND) {
 		// set filePOS to size of file
-		f->filePOS = ppi.parent[ppi.index].size;
+		f->filePOS = fileEntry->size; // Append at the end
 	} else {
 		// otherwise, start at 0
 		f->filePOS = 0;
 	}
 
-	// populate buffer, but not if we are on a block boundary!
-	if (f->filePOS / f->blockSize != 0) {
-		loadBlock(f, f->filePOS / f->blockSize);
-	}
-
 	// set access flags
 	f->flags = flags;
-
+	// if we get to this point, all is valid, so mark FCB as used
+	f->inUse = 1;	
+	f->parentDirectory = ppi.parent; 
+	f->directoryIndex = ppi.index;
 	// set file accessed timestamp and write DE back to disk
 	fileEntry->accessed = currentTime;
 
-	// if we get to this point, all is valid, so mark FCB as used
-	f->inUse = 1;
+	uint32_t dirBlocks = (ppi.parent[0].size + f->blockSize - 1) / f->blockSize;
+	writeBlocksToDisk((char*)ppi.parent, ppi.parent[0].location, dirBlocks);
+
+	// We no longer need lastElementName
+	if(ppi.lastElementName) free(ppi.lastElementName);
+
+	// populate buffer, but not if we are on a block boundary!
+	if (f->filePOS % f->blockSize != 0) {
+		loadBlock(f, f->filePOS / f->blockSize);
+	}
 	
 	return (returnFd);						// all set
 	}
@@ -229,8 +299,38 @@ int b_seek (b_io_fd fd, off_t offset, int whence)
 		{
 		return (-1); 					//invalid file descriptor
 		}
+
+	b_fcb* f = &fcbArray[fd];
+	if(!f->inUse || f->buf) return -1;
+
+	long long base;
 		
-		
+	if(whence == SEEK_SET)
+	{
+		base = 0;
+	}	
+	else if (whence == SEEK_CUR)
+	{
+		base = (long long)f->fileSize;
+	}
+	else
+	{
+		return -1; // Invalid Whence
+	}
+
+	long long newPos = base + (long long)offset;
+
+	// Cannot seek to negative position
+	if (newPos < 0) return -1;
+
+	// Update the new position
+	f->filePOS = (uint32_t)newPos;
+
+	// Invalidate cache so next read/write loads appropriate block
+	f->bufBlockIdx = -1;
+	f->index = 0;
+	f->buflen = 0;
+
 	return (0); //Change this
 	}
 
@@ -251,6 +351,35 @@ int flushBlock(b_fcb* f)
 // Make sure the block for filePOS exists and is loaded into f->buf
 int ensureBlockForWrite(b_fcb* f)
 {
+	// If this is a brand new file with no data blocks yet, allocate the first one
+	if(f->startBlock == 0)
+	{
+		uint32_t first = allocateBlocks(1);
+		if(first == FAT_EOF || first == (uint32_t)-1)
+		{
+			return -1;
+		}
+
+		f->startBlock = first;
+
+		// Update the directory entry and write directory back to disk
+		if(f->parentDirectory && f->directoryIndex >= 0)
+		{
+			DE* entry = &f->parentDirectory[f->directoryIndex];
+			entry->location = first;
+
+			uint32_t dirBlocks = 
+				(f->parentDirectory[0].size + f->blockSize - 1) / f->blockSize;
+
+			if(writeBlocksToDisk((char*) f->parentDirectory,
+										 f->parentDirectory[0].location,
+										 dirBlocks) != (int)dirBlocks)
+										 {
+											return -1;
+										 }
+		}
+	}
+
 	uint32_t lbIdx = (uint32_t)(f->filePOS / f->blockSize);
 
 	// If buffer already holds this block, good
@@ -294,8 +423,13 @@ int b_write (b_io_fd fd, char * buffer, int count)
 	}
 
 	b_fcb* f = &fcbArray[fd];
+	if (!f->canWrite)
+	{
+		return -1;
+	}
 	if(f->buf == NULL) return -1;   // Not open/initialized
 	if(count <= 0) return 0;
+
 
 	int total = 0;
 
@@ -377,6 +511,10 @@ int b_read (b_io_fd fd, char * buffer, int count)
 	}
 
 	b_fcb* f = &fcbArray[fd];
+	if (!f->canRead)
+	{
+		return -1;
+	}
 	if(f->buf == NULL) return -1;					  // Not open
 	if(count <= 0) return 0;					      // Nothing to do
 	if((uint32_t)f->filePOS >= f->fileSize) return 0; // EOF
@@ -484,16 +622,51 @@ int b_close (b_io_fd fd) {
 		return -1;
 	}
 
+	if(flushBlock(f) < 0)
+	{
+		fprintf(stderr, "(b_close) Failed to flush buffer\n");
+		return -1;
+	}
+
+	// Update directory entry with final size and timestamps
+	if(f->parentDirectory && f->directoryIndex >= 0)
+	{
+		uint64_t now = getCurrentTime();
+		DE* entry = &f->parentDirectory[f->directoryIndex];
+
+		entry->size = f->fileSize;
+		entry->modified = now;
+		entry->accessed = now;
+
+		uint32_t dirBlocks = 
+				(f->parentDirectory[0].size + f->blockSize - 1) / f->blockSize;
+			
+		if(writeBlocksToDisk((char*) f->parentDirectory,
+										 f->parentDirectory[0].location,
+										 dirBlocks) != (int)dirBlocks)
+										 {
+											return -1;
+										 }
+	}
+
 	// free the data buffer
-	free(f->buf);
-	f->buf = NULL;
+	if(f->buf)
+	{
+		free(f->buf);
+		f->buf = NULL;
+	}
 
 	// free the parent directory
-	free(f->parentDirectory);
-	f->parentDirectory = NULL;
-
+	if(f->parentDirectory)
+	{
+		free(f->parentDirectory);
+		f->parentDirectory = NULL;
+	}
+	
 	// mark as unused
 	f->inUse = 0;
+	f->bufBlockIdx = -1;
+	f->bufDirty = 0;
 
 	return 0;
 }

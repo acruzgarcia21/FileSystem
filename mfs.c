@@ -1,5 +1,5 @@
 /**************************************************************
-* Class::  CSC-415-0# Spring 2024
+* Class::  CSC-415-02 Spring 2024
 * Name:: Ronin Lombardino, Alexander Tamayo
 * Student IDs:: 924363164, 921199718
 * GitHub-Name:: RookAteMySSD
@@ -258,37 +258,77 @@ fdDir * fs_opendir(const char *pathname) {
     fdDir* dirInfo = malloc(sizeof(fdDir));
     if (!dirInfo) {
         free(ppi.parent);
-        free(ppi.lastElementName);
+        if(ppi.lastElementName) free(ppi.lastElementName);
         return NULL;
     }
 
-    //Load the directory we'll be iterating through
-    DE * directory = loadDirectory(ppi.parent[ppi.index].location,
-                      ppi.parent[ppi.index].size, _getGlobalVCB()->blockSize);
+    vcb* pVCB =_getGlobalVCB();
+    if(!pVCB)
+    {
+        free(dirInfo);
+        free(ppi.parent);
+        if(ppi.lastElementName) free(ppi.lastElementName);
+        return NULL;
+    }
+
+    DE* directory = NULL;
+
+    if(ppi.index == -2)
+    {
+        // path is the root
+        directory = loadDirectory(pVCB->rootStart,
+                                  pVCB->rootSize,
+                                  pVCB->blockSize);
+    }
+    else if (ppi.index >= 0)
+    {
+        // Normal dir path like "/foo" or "/bar"
+        DE* entry = &ppi.parent[ppi.index];
+        if(!(entry->flags & DE_IS_DIR))
+        {
+            // Not a directory
+            free(dirInfo);
+            free(ppi.parent);
+            if(ppi.lastElementName) free(ppi.lastElementName);
+            return NULL;
+        }
+        directory = loadDirectory(entry->location,
+                                  entry->size,
+                                  pVCB->blockSize);
+    }
+    else
+    {
+        // ppi.index == -1 : last element not found
+        free(dirInfo);
+        free(ppi.parent);
+        if(ppi.lastElementName) free(ppi.lastElementName);
+        return NULL;
+    }
 
     if (!directory) {
         free(dirInfo);
         free(ppi.parent);
-        free(ppi.lastElementName);
+        if(ppi.lastElementName) free(ppi.lastElementName);
         return NULL;
     }
 
     //populate the struct
     dirInfo->directory = directory;
-    dirInfo->d_reclen = directory->size / sizeof(DE);
+    dirInfo->d_reclen = directory[0].size / sizeof(DE); // Number of entries
     dirInfo->dirEntryPosition = 0;
+
     dirInfo->di = malloc(sizeof(struct fs_diriteminfo));
     if (!dirInfo->di) {
         free(dirInfo->directory);
         free(dirInfo);
         free(ppi.parent);
-        free(ppi.lastElementName);
+        if(ppi.lastElementName) free(ppi.lastElementName);
         return NULL;
     }
 
     //Free the parent info of the directory we want
     free(ppi.parent);
-    free(ppi.lastElementName);
+    if(ppi.lastElementName) free(ppi.lastElementName);
 
     return dirInfo;
 }
@@ -346,202 +386,54 @@ int fs_closedir(fdDir *dirp) {
     return 0;
 }
 
-// int fs_isFile(char * filename)
-// {
-//     // Validate input filename
-//     if(!filename || strlen(filename) == 0) return 0;
+int fs_isFile(char* path) 
+{
+    if (!path) return 0;
 
-//     vcb* vcb = _getGlobalVCB();
-//     if(!vcb) return 0;
-
-//     // Load root directory into memory
-//     DE* currentDirectory = loadDirectory(vcb->rootStart, vcb->rootSize, vcb->blockSize);
-//     if(!currentDirectory) return 0;
-
-//     uint32_t currentSize = vcb->rootSize;
-
-//     // Skip leading '/' if present
-//     while (*filename == '/') filename ++;
-
-//     char* token = strtok(filename, "/");
-//     DE* entry = NULL;
-
-//     // Walk through each path component (directory or file)
-//     while(token)
-//     {
-//         // Compute how many entries exist in the current directory
-//         int entryCount = (int)(currentSize / sizeof(DE));
-//         entry = findEntryInDirectory(currentDirectory, entryCount, token);
-//         if(!entry) 
-//         {
-//             // Not found
-//             free(currentDirectory);
-//             currentDirectory = NULL;
-//             return 0;
-//         }
-
-//         // Check if there is another compinent (subdirectory)
-//         char* next = strtok(NULL, "/");
-//         if(next)
-//         {
-//             // Not a directory. Invalid path
-//             if(!(entry->flags & DE_IS_DIR))
-//             {
-//                 free(currentDirectory);
-//                 currentDirectory = NULL;
-//                 return 0;
-//             }
-
-//             // Load next directory from disk
-//             DE* nextDir = loadDirectory(entry->location, entry->size, vcb->blockSize);
-//             if(!nextDir)
-//             {
-//                 free(currentDirectory);
-//                 currentDirectory = NULL;
-//                 return 0;
-//             }
-
-//             // Free current and continue into the next directory
-//             free(currentDirectory);
-//             currentDirectory = nextDir;
-//             // Update size for new directory
-//             currentSize = entry->size;
-
-//             token = next;
-//         }
-//         else break;
-//     }
-
-//     // Confirm that final entry is a used file (not a directory)
-//     int isFile = (entry && (entry->flags & DE_IS_USED) && !(entry->flags & DE_IS_DIR)) ? 1 : 0;
-//     free(currentDirectory);
-//     currentDirectory = NULL;
-//     return isFile;
-// }
-
-// int fs_isDir(char * pathname)
-// {
-//     // Validate input path
-//     if(!pathname || strlen(pathname) == 0) return 0;
-
-//     // Get VCB
-//     vcb* vcb = _getGlobalVCB();
-//     if(!vcb) return 0;
-
-//     // Load root directory
-//     DE* currentDirectory = loadDirectory(vcb->rootStart, vcb->rootSize, vcb->blockSize);
-//     if(!currentDirectory) return 0;
-
-//     uint32_t currentSize = vcb->rootSize;
-
-//     // Skip leading '/' if present
-//     while (*pathname == '/') pathname++;
-
-//     // Tokenize path
-//     char* token = strtok(pathname, "/");
-//     DE* entry = NULL;
-
-//     // Walk through directories until reaching last component
-//     while(token)
-//     {
-//         int entryCount = (int)(currentSize / sizeof(DE));
-//         entry = findEntryInDirectory(currentDirectory, entryCount, token);
-
-//         if(!entry)
-//         {
-//             free(currentDirectory);
-//             currentDirectory = NULL;
-//             return 0;
-//         }
-
-//         char* next = strtok(NULL, "/");
-//         if(next)
-//         {
-//             // Must be a directory
-//             if(!(entry->flags & DE_IS_DIR))
-//             {
-//                 free(currentDirectory);
-//                 currentDirectory = NULL;
-//                 return 0;
-//             }
-
-//             // Load next subdirectory
-//             DE* nextDir = loadDirectory(entry->location, entry->size, vcb->blockSize);
-//             if(!nextDir)
-//             {
-//                 free(currentDirectory);
-//                 currentDirectory = NULL;
-//                 return 0;
-//             }
-
-//             free(currentDirectory);
-//             currentDirectory = nextDir;
-//             // Update size for new directory
-//             currentSize = entry->size;
-
-//             token = next;
-//         } 
-//         else 
-//         {
-//             break;
-//         }
-//     }
-
-//     // Check that this final entry is a directory and used
-//     int isDir = (entry && (entry->flags & DE_IS_USED) && (entry->flags & DE_IS_DIR)) ? 1 : 0;
-//     free(currentDirectory);
-//     currentDirectory = NULL;
-//     return isDir;
-// }
-
-int fs_isFile(char* path) {
-    vcb* pVcb = _getGlobalVCB();
-    if (pVcb == NULL) {
-        return -1;
-    }
-
-    if (path == NULL) {
-        return -1;
-    }
-
-    ppinfo ppi;
+    ppinfo ppi = {0};
     int r = ParsePath(path, &ppi);
     if (r != 0) {
-        return r;
+        return 0;
     }
 
-    DE* loadedDir = loadDirectory(ppi.parent->location, ppi.parent->size, pVcb->blockSize);
-    DE entry = loadedDir[ppi.index];
-    int answer = ((entry.flags & DE_IS_USED) && (entry.flags ^ DE_IS_DIR)) ? 1 : 0;
-    free(loadedDir);
-    free(ppi.parent);
+    int answer = 0;
+
+    if (ppi.index >= 0)
+    {
+        DE* entry = &ppi.parent[ppi.index];
+        answer = ((entry->flags & DE_IS_USED) && !(entry->flags & DE_IS_DIR)) ? 1 : 0;
+    }
+
+    if(ppi.parent) free(ppi.parent);
+    if(ppi.lastElementName) free(ppi.lastElementName);
+
     return answer;
 }
 
-int fs_isDir(char* path) {
-    vcb* pVcb = _getGlobalVCB();
-    if (pVcb == NULL) {
-        return -1;
-    }
+int fs_isDir(char* path) 
+{
+    if (!path) return 0;
 
-    if (path == NULL) {
-        return -1;
-    }
-
-    ppinfo ppi;
+    ppinfo ppi = {0};
     int r = ParsePath(path, &ppi);
-    if (r != 0) {
-        return r;
+    if (r != 0) return 0; // Not a dir / not found
+
+    int result = 0;
+
+    if (ppi.index >= 0)
+    {
+        DE* entry = &ppi.parent[ppi.index];
+        result = ((entry->flags & DE_IS_USED) && (entry->flags & DE_IS_DIR)) ? 1 : 0;
+    }
+    else if (ppi.index == -2) // root
+    {
+        result = 1;
     }
 
-    DE* loadedDir = loadDirectory(ppi.parent->location, ppi.parent->size, pVcb->blockSize);
-    DE entry = loadedDir[ppi.index];
-
-    int answer = ((entry.flags & DE_IS_DIR) && (entry.flags & DE_IS_USED)) ? 1 : 0;
-    free(loadedDir);
-    free(ppi.parent);
-
-    return answer;
+    if (ppi.parent) free(ppi.parent);
+    if (ppi.lastElementName) free(ppi.lastElementName);
+    
+    return result;
 }
 
 int fs_delete(char* filename)
@@ -690,38 +582,46 @@ char * fs_getcwd(char *pathname, size_t size) {
     return pathname;
 }
 
-int fs_stat(const char *path, struct fs_stat *buf) {
-    if (path == NULL || buf == NULL) {
+int fs_stat(const char *path, struct fs_stat *buf) 
+{
+    if (!path || !buf) return -1;
+
+    vcb* pVCB = _getGlobalVCB();
+    if(!pVCB) return -1;
+
+    ppinfo ppi = {0};
+    int r = ParsePath(path, &ppi);
+    if (r != 0) {
         return -1;
     }
 
-    ppinfo ppi;
-    int result = ParsePath(path, &ppi);
+    DE* entry = NULL;
 
-    if (result < 0) {
+    if(ppi.index == -2)
+    {
+        // Path is root
+        // ParsePath already loaded the root int ppi.parent
+        entry = &ppi.parent[0];
+    }
+    else if (ppi.index >= 0)
+    {
+        entry = &ppi.parent[ppi.index];
+    }
+    else
+    {
+        if (ppi.parent) free(ppi.parent);
+        if (ppi.lastElementName) free(ppi.lastElementName);
         return -1;
     }
 
-    int blockSize = _getGlobalVCB()->blockSize;
+    buf->st_size       = entry->size;
+    buf->st_blocks     = (entry->size + pVCB->blockSize - 1) / pVCB->blockSize;
+    buf->st_accesstime = entry->accessed;
+    buf->st_modtime    = entry->modified;
+    buf->st_createtime = entry->created;
 
-    DE * directory = loadDirectory(ppi.parent[ppi.index].location,
-              ppi.parent[ppi.index].size, blockSize);
-
-    if (!directory) {
-        free(ppi.parent);
-        free(ppi.lastElementName);
-        return -1;
-    }
-
-    buf->st_size = directory[ppi.index].size;
-    buf->st_blocks = (directory[ppi.index].size + blockSize - 1) / blockSize;
-    buf->st_accesstime = directory[ppi.index].accessed;
-    buf->st_modtime = directory[ppi.index].modified;
-    buf->st_createtime = directory[ppi.index].created;
-
-    free(directory);
-    free(ppi.parent);
-    free(ppi.lastElementName);
+    if (ppi.parent) free(ppi.parent);
+    if (ppi.lastElementName) free(ppi.lastElementName);
 
     return 0;
 }

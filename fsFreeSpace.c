@@ -188,6 +188,11 @@ int freeBlocks(uint32_t startBlock) {
 }
 
 int resizeBlocksSmart(uint32_t startBlock, uint32_t newSize, uint32_t oldSize) {
+    if(global_pVCB == NULL || fat == NULL)
+    {
+        return -1;
+    }
+    
     uint32_t blockSize = global_pVCB->blockSize;
 
     if (newSize == 0) {
@@ -198,23 +203,59 @@ int resizeBlocksSmart(uint32_t startBlock, uint32_t newSize, uint32_t oldSize) {
         return 0;
     }
 
-    if (newSize < oldSize) {
-        uint32_t blockToStartFreeing = (newSize / blockSize) + 1;
-        return freeBlocks(getBlockOfFile(startBlock, blockToStartFreeing));
-    } else {
-        uint32_t previousLastBlock = getBlockOfFile(startBlock, oldSize / blockSize);
-        uint32_t oldNumBlocks = (oldSize + blockSize - 1) / blockSize;
-        uint32_t newNumBlocks = (newSize + blockSize - 1) / blockSize;
-        fat[previousLastBlock] = allocateBlocks(newNumBlocks - oldNumBlocks);
+    uint32_t oldNumBlocks = (oldSize + blockSize - 1) / blockSize;
+    uint32_t newNumBlocks = (newSize + blockSize - 1) / blockSize;
 
-        uint64_t result = LBAwrite(fat, global_pVCB->fatNumBlocks, global_pVCB->fatStart);
-        if (result != global_pVCB->fatNumBlocks) {
-            printf("for some reason our write...failed! %ld\n", result);
+    // Shrinking
+    if (newNumBlocks < oldNumBlocks) {
+        uint32_t keepIdx = newNumBlocks - 1;
+        uint32_t keepBlock = getBlockOfFile(startBlock, keepIdx);
+        if (keepBlock == FAT_EOF || keepBlock == FAT_RESERVED)
+        {
             return -1;
         }
 
+        uint32_t firstFree = fat[keepBlock];
+        if (firstFree != FAT_EOF && firstFree != FAT_RESERVED)
+        {
+            freeBlocks(firstFree);
+        }
+        fat[keepBlock] = FAT_EOF;
+
+        uint64_t r = LBAwrite(fat, global_pVCB->fatNumBlocks, global_pVCB->fatStart);
+        if (r != global_pVCB->fatNumBlocks)
+        {
+            return -1;
+        }
         return 0;
+    } 
+
+    // Growing
+    uint32_t needBlocks = newNumBlocks - oldNumBlocks;
+    if(needBlocks == 0) return 0;
+
+    // last valid data block before growth
+    uint32_t lastIdx = oldNumBlocks - 1;
+    uint32_t lastBlock = getBlockOfFile(startBlock, lastIdx);
+    if(lastBlock == FAT_EOF || lastBlock == FAT_RESERVED)
+    {
+        return -1;
     }
+
+    uint32_t newChainHead = allocateBlocks(needBlocks);
+    if(newChainHead == FAT_EOF || newChainHead == FAT_RESERVED)
+    {
+        return FAT_EOF;
+    }
+
+    fat[lastBlock] = newChainHead;
+
+    uint64_t result = LBAwrite(fat, global_pVCB->fatNumBlocks, global_pVCB->fatStart);
+    if(result != global_pVCB->fatNumBlocks)
+    {
+        return -1;
+    }
+    return 0;
 }
 
 int resizeBlocks(uint32_t startBlock, uint32_t newSize) {

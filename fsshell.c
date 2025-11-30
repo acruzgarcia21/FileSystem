@@ -1,7 +1,7 @@
 /**************************************************************
-* Class::  CSC-415-0# Spring 2024
-* Name::
-* Student IDs::
+* Class::  CSC-415-02 Spring 2024
+* Name:: Alejandro Cruz-Garcia
+* Student IDs:: 923799497
 * GitHub-Name::
 * Group-Name::
 * Project:: Basic File System
@@ -361,7 +361,38 @@ int cmd_cp (int argcnt, char *argvec[])
 ****************************************************/
 int cmd_mv (int argcnt, char *argvec[])
 	{
-#if (CMDMV_ON == 1)				
+#if (CMDMV_ON == 1)		
+	if (argcnt != 3)
+	{
+		printf("Usage: mv srcfile destfile\n");
+		return -1;
+	}
+
+	char* src = argvec[1];
+	char* dest = argvec[2];
+
+	if (fs_isDir(src))
+	{
+		printf("(mv): Moving directories is not supported (src is a directory)\n");
+		return -1;
+	}
+
+	if(!fs_isFile(src))
+	{
+		printf("(mv): %s is not a regular file\n", src);
+		return -1;
+	}
+
+	// Open source for read
+	int src_fd = open(src, O_RDONLY);
+	if (src_fd < 0)
+	{
+		printf("(mv): failed to open source %s\n");
+	}
+
+	// Open source for read
+	int dest_fd = b_open(dest, O_WRONLY | O_CREAT | O_TRUNC);
+
 	return -99;
 	// **** TODO ****  For you to implement	
 #endif
