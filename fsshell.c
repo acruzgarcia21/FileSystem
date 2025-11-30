@@ -386,10 +386,10 @@ int cmd_mv (int argcnt, char *argvec[])
 	}
 
 	// Open source for read
-	int src_fd = open(src, O_RDONLY);
+	int src_fd = b_open(src, O_RDONLY);
 	if (src_fd < 0)
 	{
-		printf("(mv): failed to open source %s\n");
+		printf("(mv): failed to open source %s\n", src);
 		return src_fd;
 	}
 

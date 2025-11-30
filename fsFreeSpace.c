@@ -153,24 +153,67 @@ int freeBlocks(uint32_t startBlock) {
         return -1;
     }
 
-    // add blocks from file to free block list
-    fat[global_pVCB->lastFreeBlock] = startBlock;
-
-    // find the end of the file we just freed
-    uint32_t fileEnd = startBlock;
-    uint32_t fileEndPtr;
-    while (fileEnd != FAT_EOF && fileEnd != FAT_RESERVED) {
-        printf("fileEnd is 0x%x\n", fileEnd);
-        fileEndPtr = fileEnd;
-        fileEnd = fat[fileEnd];
-    }
-
-    if (fileEnd == FAT_RESERVED) {
+    if (startBlock == 0 || startBlock == FAT_EOF || startBlock == FAT_RESERVED)
+    {
         return -1;
     }
 
-    // set new last free block in VCB
-    global_pVCB->lastFreeBlock = fileEndPtr;
+    uint32_t numBlocks = global_pVCB->numBlocks;
+    // find the end of the file we just freed
+    uint32_t fileEnd = startBlock;
+    uint32_t prev    = startBlock;
+    uint32_t steps = 0;
+
+    // Walk the file's FAT chain until we hit EOF
+    while (1)
+    {
+        uint32_t next = fat[fileEnd];
+        printf("fileEnd is 0x%x -> next 0x%x\n", fileEnd, next);
+
+        if(next == FAT_EOF)
+        {
+            // fileEnd is the last block in this file chain
+            prev = fileEnd;
+            break;
+        }
+
+        if (next == FAT_RESERVED)
+        {
+            // Corrupt chain 
+            return -1;
+        }
+
+        fileEnd = next;
+
+        // Saftey: avoid infinite loops due to corruption
+        if(steps++ > numBlocks)
+        {
+            // Something went wrong
+            printf("(freeBlocks): aborting, looop exceeded numBlocks\n");
+            return -1;
+        }
+    }
+
+    // Link this freed chain in front of the current free list
+    uint32_t oldFreeHead = global_pVCB->firstFreeBlock;
+
+    // Tail of the freed chain now points at old head
+    fat[prev] = oldFreeHead;
+
+    // New head is the start of the freed chain
+    global_pVCB->firstFreeBlock = startBlock;
+
+    // If there used to be no free list, fix up lastFreeBlock
+    if (oldFreeHead == FAT_EOF || oldFreeHead == FAT_RESERVED || oldFreeHead == 0)
+    {
+        uint32_t tail = startBlock;
+        steps = 0;
+        while (fat[tail] != FAT_EOF && steps++ < numBlocks)
+        {
+            tail = fat[tail];
+        }
+        global_pVCB->lastFreeBlock = tail;
+    }
 
     // write FAT to disk
     uint64_t result = LBAwrite(fat, global_pVCB->fatNumBlocks, global_pVCB->fatStart);
