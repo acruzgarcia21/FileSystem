@@ -117,8 +117,7 @@ int fs_mkdir(const char *pathname, mode_t mode) {
     free(ppi.parent);
     free(ppi.lastElementName);
     
-    if (addResult != 0) {
-        printf("what's all this then? %d\n", addResult);
+    if (addResult < 0) {
         freeBlocks(newEntry.location);
         return -1;
     }

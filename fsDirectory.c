@@ -691,86 +691,110 @@ DE* getcwdInternal() {
 
 int addEntryToDirectory(DE* parent, DE* newEntry) {
     // get global VCB
-    vcb* pVCB = _getGlobalVCB();
-    if (!pVCB || !parent || !newEntry) return -1;
+    vcb* globalVCB = _getGlobalVCB();
+    if (globalVCB == NULL) {
+        return -1;
+    }
 
     uint32_t numEntries = parent->size / sizeof(DE);
 
-    // Always work on a freshly loaded copy of the directory
-    DE* loadedDir = loadDirectory(parent->location, parent->size, pVCB->blockSize);
+    DE* loadedDir = loadDirectory(parent->location, parent->size, globalVCB->blockSize);
     if (loadedDir == NULL) {
         return -1;
     }
 
-    int insertionIdx = -1;
-
     uint32_t priorLocation = parent->location;
 
     // find an appropriate spot
-    for (int i = 2; i < (int)numEntries; i++) {
-        if (!(loadedDir[i].flags & DE_IS_USED)) {
+    int insertionIdx = 0;
+    for (int i = 2; i < numEntries; i++) {
+        if (!(parent[i].flags & DE_IS_USED)) {
             insertionIdx = i;
             break;
         }
     }
     
-    // If there is no free slot, we need to grow the directory
-    if (insertionIdx == -1)
-    {
-        uint32_t oldSize = parent->size;
-        uint32_t newSize = oldSize + sizeof(DE);
-    }
-
-
-
     // if we couldn't insert, allocate more space in directory
-    if (insertionIdx == -1) {
+    if (insertionIdx == 0) {
         printf("allocating more memory...\n");
-        uint32_t oldSize = parent->size;
-        uint32_t newSize = oldSize + sizeof(DE);
+        // check if we need to allocate more blocks
+        uint32_t numBlocksCurrent = parent->size / globalVCB->blockSize;
+        uint32_t newSize = parent->size + sizeof(DE);
+        uint32_t numBlocksNew = newSize / globalVCB->blockSize;
 
-        // Grow the FAT chain for this directory
-        printf("resizing blocks...\n");
-        int r = resizeBlocksSmart(parent->location, newSize, oldSize);
-        printf("resized blocks\n");
-        if (r != 0) {
-            printf("what? %d\n", r);
-            free(loadedDir);
-            return r;
+        // if yes, allocate the additional disk space
+        if (numBlocksNew > numBlocksCurrent) {
+            printf("resizing blocks...\n");
+            int r = resizeBlocksSmart(parent->location, parent->size + sizeof(DE), parent->size);
+            //int r = resizeBlocks(parent->location, parent->size + sizeof(DE));
+            printf("resized blocks\n");
+            if (r != 0) {
+                printf("what? %d\n", r);
+                free(loadedDir);
+                return r;
+            }
         }
+        // set insertion index to new final entry
+        insertionIdx = numEntries;
 
-        // Directory is now bigger
-        parent->size = newSize;
-
+        // reload directory and set new size
         free(loadedDir);
-
-        numEntries = newSize / sizeof(DE);
         loadedDir = loadDirectory(parent->location,
-                                  parent->size,
-                                  pVCB->blockSize);
-                                  
+                                  parent->size + sizeof(DE),
+                                  globalVCB->blockSize);
         if (loadedDir == NULL) {
             printf("loadedDir was null\n");
             return -1;
         }
+        loadedDir[0].size += sizeof(DE);
+        parent->size += sizeof(DE);
+        printf("next spot...\n");
 
-        // New entry goes at the end
-        insertionIdx = (int)(numEntries - 1);
-        loadedDir[0].size = newSize;
+        // write entry in parent directory (if not root directory)
+        if (loadedDir[0].location != loadedDir[1].location) {
+            printf("inside this conditional block...\n");
+            // load parent directory
+            DE* loadedParent = loadDirectory(loadedDir[1].location,
+                                             loadedDir[1].size,
+                                             globalVCB->blockSize);
+
+            // update DE in parent directory
+            DE* parentInParent = NULL;
+
+            // find DE in parent directory using location
+            for (int i = 2; i < loadedParent[0].size / sizeof(DE); i++) {
+                if (loadedParent[i].location == parent->location) {
+                    parentInParent = &loadedParent[i];
+                }
+            }
+
+            // update values
+            parentInParent->size = parent->size;
+            parentInParent->modified = parent->modified;
+            parentInParent->accessed = parent->accessed;
+
+            // write parent directory back to disk, and free in memory
+            writeBlocksToDisk((char *)loadedParent,
+                              loadedParent[0].location,
+                              (loadedParent[0].size + globalVCB->blockSize - 1) 
+                                    / globalVCB->blockSize);
+            free(loadedParent);
+        }
     }
 
     // copy in the new entry to its proper place
     memcpy(&loadedDir[insertionIdx], newEntry, sizeof(DE));
 
     // write blocks to disk
-    uint32_t numBlocks = (parent->size + pVCB->blockSize - 1) / pVCB->blockSize;
-    printf("got to end of addEntryToDirectory...\n");
+    uint32_t numBlocks = (parent->size + globalVCB->blockSize - 1) / globalVCB->blockSize;
     int r = writeBlocksToDisk((char *)loadedDir, parent->location, numBlocks);
-    free(loadedDir);
-
-    if (r != (int)numBlocks) {
+    if (r != numBlocks) {
+        free(loadedDir);
         return -1;
     }
+
+    // release resources
+    free(loadedDir);
 
     return insertionIdx;
 }
