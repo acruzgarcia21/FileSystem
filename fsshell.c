@@ -361,7 +361,9 @@ int cmd_cp (int argcnt, char *argvec[])
 ****************************************************/
 int cmd_mv (int argcnt, char *argvec[])
 	{
-#if (CMDMV_ON == 1)		
+#if (CMDMV_ON == 1)	
+	// **** TODO ****  For you to implement	
+
 	if (argcnt != 3)
 	{
 		printf("Usage: mv srcfile destfile\n");
@@ -388,13 +390,49 @@ int cmd_mv (int argcnt, char *argvec[])
 	if (src_fd < 0)
 	{
 		printf("(mv): failed to open source %s\n");
+		return src_fd;
 	}
 
 	// Open source for read
 	int dest_fd = b_open(dest, O_WRONLY | O_CREAT | O_TRUNC);
+	if (dest_fd < 0)
+	{
+		printf("(mv): failed to open dest %s\n", dest);
+		b_close(src_fd);
+		return dest_fd;
+	}
 
-	return -99;
-	// **** TODO ****  For you to implement	
+	char buf[BUFFERLEN];
+	int readcnt;
+
+	// Copy loop (same pattern as cp)
+	do
+	{
+		readcnt = b_read(src_fd, buf, BUFFERLEN);
+		if (readcnt > 0)
+		{
+			int wrote = b_write(dest_fd, buf, readcnt);
+			if (wrote < readcnt)
+			{
+				printf("(mv): short write\n");
+				b_close(src_fd);
+				b_close(dest_fd);
+				return -1;
+			}
+		}
+	} while (readcnt == BUFFERLEN);
+
+	b_close(src_fd);
+	b_close(dest_fd);	
+
+	// Delete the original
+	int del = fs_delete(src);
+	if (del != 0)
+	{
+		printf("(mv): warning: copied to %s but could not remove source %s\n", dest, src);
+		return del;
+	}
+
 #endif
 	return 0;
 	}
