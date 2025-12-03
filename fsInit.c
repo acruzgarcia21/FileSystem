@@ -1,7 +1,7 @@
 /**************************************************************
 * Class::  CSC-415-02 Fall 2025
-* Name:: Evan Caplinger, 
-* Student IDs:: 924990024, 
+* Name:: Alejandro Cruz-Garcia, Ronin Lombardino, Evan Caplinger, Alex Tamayo
+* Student IDs:: 923799497, 924363164, 924990024, 921199718
 * GitHub-Name:: RookAteMySSD
 * Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System
@@ -33,7 +33,7 @@ int initFileSystem ( uint64_t numberOfBlocks, uint64_t blockSize)
 	/* TODO: Add any code you need to initialize your file system. */
 
 	// get a pointer to the global vcb
-	vcb* ourVCB = _getGlobalVCB();
+	vcb* ourVCB = getGlobalVCB();
 
 	// create buffer to read VCB into
 	char* vcbBuf = malloc(blockSize);

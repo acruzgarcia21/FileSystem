@@ -1,7 +1,7 @@
 /**************************************************************
 * Class::  CSC-415-02 Fall 2025
-* Name:: Evan Caplinger, Ronin Lombardino
-* Student IDs:: 924990024, 924363164
+* Name:: Alejandro Cruz-Garcia, Ronin Lombardino, Evan Caplinger, Alex Tamayo
+* Student IDs:: 923799497, 924363164, 924990024, 921199718
 * GitHub-Name:: RookAteMySSD
 * Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System
@@ -40,7 +40,6 @@ int freeBlocks(uint32_t startBlock);
 
 // resize allocated blocks, newSize is in bytes
 int resizeBlocks(uint32_t startBlock, uint32_t newSize);
-int resizeBlocksSmart(uint32_t startBlock, uint32_t newSize, uint32_t oldSize);
 
 // get blocknum of certain offset
 uint32_t getBlockOfFile(uint32_t startBlock, uint32_t offset);

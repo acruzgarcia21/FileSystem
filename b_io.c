@@ -1,9 +1,9 @@
 /**************************************************************
-* Class::  CSC-415-0# Fall 2025
-* Name::
-* Student IDs::
-* GitHub-Name::
-* Group-Name::
+* Class::  CSC-415-02 Fall 2025
+* Name:: Alejandro Cruz-Garcia, Ronin Lombardino, Evan Caplinger, Alex Tamayo
+* Student IDs:: 923799497, 924363164, 924990024, 921199718
+* GitHub-Name:: RookAteMySSD
+* Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System
 *
 * File:: b_io.c
@@ -125,7 +125,7 @@ b_io_fd b_open (char * filename, int flags)
 	}
 
 	b_fcb* f = &fcbArray[returnFd];
-	f->blockSize = _getGlobalVCB()->blockSize;
+	f->blockSize = getGlobalVCB()->blockSize;
 
 	f->canRead = 0;
 	f->canWrite = 0;
@@ -157,7 +157,7 @@ b_io_fd b_open (char * filename, int flags)
 
 	// parse path and get directory entry
 	ppinfo ppi;
-	int r = ParsePath(filename, &ppi);
+	int r = parsePath(filename, &ppi);
 	if (r != 0) {
 		fprintf(stderr,
 				"(b_open) Could not parse filename %s; return code = %d\n",
@@ -283,6 +283,14 @@ b_io_fd b_open (char * filename, int flags)
 	// populate buffer, but not if we are on a block boundary!
 	if (f->filePOS % f->blockSize != 0) {
 		loadBlock(f, f->filePOS / f->blockSize);
+	}
+
+	// reload CWD, in case we've altered it
+	if (reloadCwd() != 0) {
+		printf("Could not reload CWD\n");
+		free(f->buf);
+		f->buf = NULL;
+		return -1;
 	}
 	
 	return (returnFd);						// all set

@@ -43,7 +43,7 @@ typedef struct {
 } vcb;
 
 // returns a pointer to a global instance of the VCB
-vcb* _getGlobalVCB();
+vcb* getGlobalVCB();
 
 // initialize the VCB
 int initVCB(vcb* pVCB, uint64_t numberOfBlocks, uint64_t blockSize);

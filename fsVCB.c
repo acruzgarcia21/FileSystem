@@ -1,3 +1,18 @@
+/**************************************************************
+* Class::  CSC-415-02 Fall 2025
+* Name:: Alejandro Cruz-Garcia, Ronin Lombardino, Evan Caplinger, Alex Tamayo
+* Student IDs:: 923799497, 924363164, 924990024, 921199718
+* GitHub-Name:: RookAteMySSD
+* Group-Name:: Team #1 Victory Royal
+* Project:: Basic File System
+*
+* File:: fsVCB.c
+*
+* Description:: Definition and functions for Volume Control
+*               Block (VCB).
+*
+**************************************************************/
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -7,7 +22,7 @@
 
 vcb globalVCB;
 
-vcb* _getGlobalVCB() {
+vcb* getGlobalVCB() {
     return &globalVCB;
 }
 
