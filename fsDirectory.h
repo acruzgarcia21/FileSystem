@@ -80,6 +80,7 @@ DE* getcwdInternal();
 int setcwdInternal(const char* path);
 int initCwdAtRoot();
 void freeCwdMemory();
+int reloadCwd();
 
 // temporary directory functions
 int addEntryToDirectory(DE* parent, DE* newEntry);
