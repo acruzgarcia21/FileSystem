@@ -724,12 +724,10 @@ int addEntryToDirectory(DE* parent, DE* newEntry) {
 
         // if yes, allocate the additional disk space
         if (numBlocksNew > numBlocksCurrent) {
-            printf("resizing blocks...\n");
-            int r = resizeBlocksSmart(parent->location, parent->size + sizeof(DE), parent->size);
-            //int r = resizeBlocks(parent->location, parent->size + sizeof(DE));
-            printf("resized blocks\n");
+            // int r = resizeBlocksSmart(parent->location, parent->size + sizeof(DE), parent->size);
+            int r = resizeBlocks(parent->location, parent->size + sizeof(DE));
             if (r != 0) {
-                printf("what? %d\n", r);
+                printf("could not resize blocks; got error code %d\n", r);
                 free(loadedDir);
                 return r;
             }

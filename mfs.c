@@ -218,13 +218,25 @@ int fs_rmdir(const char *pathname) {
     // Remove from parent
     uint32_t parentLocation = ppi.parent[0].location;
     uint32_t parentSize = ppi.parent[0].size;
+
+    ppi.parent[ppi.index].flags &= ~DE_IS_USED;
     
-    if (removeEntryFromDirectory(ppi.parent, ppi.lastElementName) != 0) {
-        printf("couldn't remove\n");
+    int blocksToWrite = (ppi.parent[0].size + pVCB->blockSize - 1) / pVCB->blockSize;
+    printf("writing %d blocks\n", blocksToWrite);
+    int r = writeBlocksToDisk((char *)ppi.parent,
+                                ppi.parent[0].location,
+                                blocksToWrite);
+    if (r < 0) {
         free(ppi.parent);
-        free(ppi.lastElementName);
         return -1;
     }
+    
+    // if (removeEntryFromDirectory(ppi.parent, ppi.lastElementName) != 0) {
+    //     printf("couldn't remove\n");
+    //     free(ppi.parent);
+    //     free(ppi.lastElementName);
+    //     return -1;
+    // }
     
     free(ppi.parent);
     free(ppi.lastElementName);
