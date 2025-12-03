@@ -121,6 +121,12 @@ int fs_mkdir(const char *pathname, mode_t mode) {
         freeBlocks(newEntry.location);
         return -1;
     }
+
+    // reload cwd so that we have a clean copy
+    if (reloadCwd() != 0) {
+        printf("could not reload cwd\n");
+        return -1;
+    }
     
     return 0;
 }
@@ -246,6 +252,12 @@ int fs_rmdir(const char *pathname) {
         errno = EIO;
         return -1;
     }
+
+    // reload cwd so that we have a clean copy
+    if (reloadCwd() != 0) {
+        printf("could not reload cwd\n");
+        return -1;
+    }
     
     return 0;
 }
@@ -359,10 +371,15 @@ struct fs_diriteminfo *fs_readdir(fdDir *dirp) {
     
     //get the current directory entry
     do {
+        // if we have iterated beyond the end of the directory, return NULL
+        if (dirp->dirEntryPosition == dirp->d_reclen) {
+            return NULL;
+        }
+
+        // go to the next entry
         currentEntry = dirp->directory[dirp->dirEntryPosition];
         dirp->dirEntryPosition++;
-    } while (!(currentEntry.flags & DE_IS_USED) 
-                && dirp->dirEntryPosition < dirp->d_reclen);
+    } while (!(currentEntry.flags & DE_IS_USED));
 
     //populate the fs_diriteminfo struct
     struct fs_diriteminfo * diritem =  dirp->di; //refrence ptr
@@ -509,6 +526,12 @@ int fs_delete(char* filename)
         printf("fs_delete: failed to write directory back to disk (wrote %d of %d)\n", wrote, blocksToWrite);
         free(ppi.parent);
         ppi.parent = NULL;
+        return -1;
+    }
+
+    // reload cwd so that we have a clean copy
+    if (reloadCwd() != 0) {
+        printf("could not reload cwd\n");
         return -1;
     }
 

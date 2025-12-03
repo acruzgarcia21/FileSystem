@@ -626,7 +626,7 @@ int setcwdInternal(const char* path) {
                 restoreCwdState();
                 free(pathCopy);
                 free(parent);
-                printf("could not find token in current directory\n");
+                printf("could not find token %s in current directory\n", token);
                 return idx;
             }
 
@@ -709,6 +709,7 @@ int addEntryToDirectory(DE* parent, DE* newEntry) {
     int insertionIdx = 0;
     for (int i = 2; i < numEntries; i++) {
         if (!(parent[i].flags & DE_IS_USED)) {
+            printf("found spot to insert: %d\n", i);
             insertionIdx = i;
             break;
         }
@@ -734,6 +735,7 @@ int addEntryToDirectory(DE* parent, DE* newEntry) {
         }
         // set insertion index to new final entry
         insertionIdx = numEntries;
+        printf("setting insertionIdx to %d\n", insertionIdx);
 
         // reload directory and set new size
         free(loadedDir);
@@ -837,6 +839,27 @@ int isDirectoryEmpty(DE* dir, uint32_t numEntries) {
 
     // reaching this point means we didn't see a used entry, so return true
     return 1;
+}
+
+int reloadCwd() {
+    // if cwd is root, do nothing
+    if (cwdLevel == 0) {
+        return 0;
+    }
+
+    // get name of current CWD
+    char name[DE_NAME_MAX];
+    strcpy(name, cwdStack[cwdLevel]->name);
+    
+    // just cd to parent and then back to CWD, effectively reloading it
+    if (setcwdInternal("..") != 0) {
+        return -1;
+    }
+    if (setcwdInternal(name) != 0) {
+        return -1;
+    }
+
+    return 0;
 }
 
 void uninitCwdSystem() {
