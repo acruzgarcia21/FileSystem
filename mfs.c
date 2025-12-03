@@ -444,90 +444,34 @@ int fs_delete(char* filename)
     vcb* vcb = _getGlobalVCB();
     if(!vcb) return -1;
 
-    // Load root directory
-    DE* currentDirectory = loadDirectory(vcb->rootStart, vcb->rootSize, vcb->blockSize);
-    if(!currentDirectory) return -1;
-
-    // Track the parent directory's size so we know how many entries to scan
-    uint32_t parentSize  = vcb->rootSize; 
-    uint32_t parentStart = vcb->rootStart;
-
-    // Skip any leading slashes
-    while (*filename == '/') filename++;
-    
-    DE* parentDir   = currentDirectory; // Directory that contains the target
-    DE* parentEntry = NULL;             // The DE of the parent dir (within its parent)
-    DE* entry       = NULL;
-
-    // Tokenise path
-    char* token = strtok(filename, "/");
-
-    // Traverse path until the target file is found
-    while(token)
-    {
-        int entryCount = (int)(parentSize / sizeof(DE));
-        entry = findEntryInDirectory(parentDir, entryCount, token);
-        if(!entry)
-        {
-            free(parentDir);
-            parentDir = NULL;
-            return -1;
-        }
-
-        char* next = strtok(NULL, "/");
-        if(next)
-        {
-            // Must be a directory if we have more tokens to walk through
-            if(!(entry->flags & DE_IS_DIR))
-            {
-                free(parentDir);
-                parentDir = NULL;
-                return -1;
-            }
-
-            // Load next directory in chain
-            DE* nextDir = loadDirectory(entry->location, entry->size, vcb->blockSize);
-            if(!nextDir)
-            {
-                free(parentDir);
-                parentDir = NULL;
-                return -1;
-            }
-
-            free(parentDir);
-            parentDir   = nextDir;
-            parentEntry = entry;
-            parentStart = entry->location;
-            parentSize  = entry->size;
-
-            token = next;
-        } 
-        else
-        {
-            break;
-        }
+    ppinfo ppi;
+    int r = ParsePath(filename, &ppi);
+    if (r != 0) {
+        return -1;
     }
+
+    DE* entry = &ppi.parent[ppi.index];
 
     // Safety check: ensure entry exists
     if(!entry)
     {
-        free(parentDir);
-        parentDir = NULL;
+        free(ppi.parent);
+        ppi.parent = NULL;
         return -1;
     }
     // Prevent deletion of '.' or '..'
     if (strcmp(entry->name, ".") == 0 || strcmp(entry->name,  "..") == 0)
     {
-        free(parentDir);
-        parentDir = NULL;
+        free(ppi.parent);
+        ppi.parent = NULL;
         return -1;
     }
 
     // Validate that this is an existing file, not a directory
     if(!entry || !(entry->flags & DE_IS_USED) || (entry->flags & DE_IS_DIR))
     {
-        free(parentDir);
-        parentDir = NULL;
+        free(ppi.parent);
+        ppi.parent = NULL;
         return -1;
     }
 
@@ -544,21 +488,21 @@ int fs_delete(char* filename)
     entry->modified = 0;
 
     // Write parent directory back to disk
-    int blocksToWrite = (int)((parentSize + vcb->blockSize - 1) / vcb->blockSize);
-    int wrote = writeBlocksToDisk((char*)parentDir, parentStart, blocksToWrite);
+    int blocksToWrite = (int)((ppi.parent[0].size + vcb->blockSize - 1) / vcb->blockSize);
+    int wrote = writeBlocksToDisk((char*)ppi.parent, ppi.parent[0].location, blocksToWrite);
 
     // Verify the write completed fully
     if(wrote != blocksToWrite)
     {
         printf("fs_delete: failed to write directory back to disk (wrote %d of %d)\n", wrote, blocksToWrite);
-        free(parentDir);
-        parentDir = NULL;
+        free(ppi.parent);
+        ppi.parent = NULL;
         return -1;
     }
 
     // Cleanup and exit
-    free(parentDir);
-    parentDir = NULL;
+    free(ppi.parent);
+    ppi.parent = NULL;
     return 0;
 }
 
