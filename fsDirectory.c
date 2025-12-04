@@ -227,10 +227,11 @@ DE* createDir(int count, const DE* parent, int blockSize)
 
 int createFile(const char* filename, DE* parent) 
 {
+    // ensure filename and parent are not null or empty
     if(!filename || !parent) return -1;
 
+    // set up new entry
     uint64_t currentTime = getCurrentTime();
-
     DE newEntry = {0};
     strncpy(newEntry.name, filename, DE_NAME_MAX);
     newEntry.flags = DE_IS_USED;
@@ -254,6 +255,7 @@ uint64_t getCurrentTime() {
 
 DE* findEntryInDirectory(DE* dir, int entryCount, const char* name)
 {
+    // iterate through directory until we find a matching name
     for(int i = 0; i < entryCount; i++)
     {
         if((dir[i].flags & DE_IS_USED) && strcmp(dir[i].name, name) == 0)
@@ -465,6 +467,7 @@ int initCwdAtRoot() {
 }
 
 void freeCwdStack(DE** stackToFree) {
+    // walk through entire cwd stack and free each non-null DE
     for (int i = 1; i < MAX_PATH_DEPTH; i++) {
         if (stackToFree[i] != NULL) {
             free(stackToFree[i]);
