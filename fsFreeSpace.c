@@ -1,7 +1,7 @@
 /**************************************************************
 * Class::  CSC-415-02 Fall 2025
-* Name:: Evan Caplinger, Ronin Lombardino 
-* Student IDs:: 924990024, 924363164
+* Name:: Alejandro Cruz-Garcia, Ronin Lombardino, Evan Caplinger, Alex Tamayo
+* Student IDs:: 923799497, 924363164, 924990024, 921199718
 * GitHub-Name:: RookAteMySSD
 * Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System
@@ -102,7 +102,7 @@ int loadFAT(vcb* pVCB) {
 uint32_t allocateBlocks(uint32_t numBlocks) {
     // ensure that fat is initialized (mounted)
     if (global_pVCB == NULL || fat == NULL) {
-        printf("something was null\n");
+        printf("File system not properly initialized.\n");
         return -1;
     }
 
@@ -113,7 +113,7 @@ uint32_t allocateBlocks(uint32_t numBlocks) {
     for (int i = 0; i < numBlocks; i++) {
         //if the current block is our EOF sentinel, return EOF sentinel
         if (currentBlock == FAT_EOF) {
-            printf("current block is EOF\n");
+            printf("Error while traversing freespace list.\n");
             return FAT_EOF;
         }
 
@@ -133,7 +133,7 @@ uint32_t allocateBlocks(uint32_t numBlocks) {
     // write FAT to disk
     uint64_t result = LBAwrite(fat, global_pVCB->fatNumBlocks, global_pVCB->fatStart);
     if (result != global_pVCB->fatNumBlocks) {
-        printf("could not write fat\n");
+        printf("Could not write FAT.\n");
         return -1;
     }
 
@@ -168,7 +168,6 @@ int freeBlocks(uint32_t startBlock) {
     while (1)
     {
         uint32_t next = fat[fileEnd];
-        printf("fileEnd is 0x%x -> next 0x%x\n", fileEnd, next);
 
         if(next == FAT_EOF)
         {
@@ -189,7 +188,7 @@ int freeBlocks(uint32_t startBlock) {
         if(steps++ > numBlocks)
         {
             // Something went wrong
-            printf("(freeBlocks): aborting, looop exceeded numBlocks\n");
+            printf("(freeBlocks): aborting, loop exceeded numBlocks\n");
             return -1;
         }
     }
@@ -230,79 +229,7 @@ int freeBlocks(uint32_t startBlock) {
     return 0;
 }
 
-int resizeBlocksSmart(uint32_t startBlock, uint32_t newSize, uint32_t oldSize) {
-    if(global_pVCB == NULL || fat == NULL)
-    {
-        return -1;
-    }
-    
-    uint32_t blockSize = global_pVCB->blockSize;
-
-    if (newSize == 0) {
-        return freeBlocks(startBlock);
-    }
-
-    if (newSize == oldSize) {
-        return 0;
-    }
-
-    uint32_t oldNumBlocks = (oldSize + blockSize - 1) / blockSize;
-    uint32_t newNumBlocks = (newSize + blockSize - 1) / blockSize;
-
-    // Shrinking
-    if (newNumBlocks < oldNumBlocks) {
-        uint32_t keepIdx = newNumBlocks - 1;
-        uint32_t keepBlock = getBlockOfFile(startBlock, keepIdx);
-        if (keepBlock == FAT_EOF || keepBlock == FAT_RESERVED)
-        {
-            return -1;
-        }
-
-        uint32_t firstFree = fat[keepBlock];
-        if (firstFree != FAT_EOF && firstFree != FAT_RESERVED)
-        {
-            freeBlocks(firstFree);
-        }
-        fat[keepBlock] = FAT_EOF;
-
-        uint64_t r = LBAwrite(fat, global_pVCB->fatNumBlocks, global_pVCB->fatStart);
-        if (r != global_pVCB->fatNumBlocks)
-        {
-            return -1;
-        }
-        return 0;
-    } 
-
-    // Growing
-    uint32_t needBlocks = newNumBlocks - oldNumBlocks;
-    if(needBlocks == 0) return 0;
-
-    // last valid data block before growth
-    uint32_t lastIdx = oldNumBlocks - 1;
-    uint32_t lastBlock = getBlockOfFile(startBlock, lastIdx);
-    if(lastBlock == FAT_EOF || lastBlock == FAT_RESERVED)
-    {
-        return -1;
-    }
-
-    uint32_t newChainHead = allocateBlocks(needBlocks);
-    if(newChainHead == FAT_EOF || newChainHead == FAT_RESERVED)
-    {
-        return FAT_EOF;
-    }
-
-    fat[lastBlock] = newChainHead;
-
-    uint64_t result = LBAwrite(fat, global_pVCB->fatNumBlocks, global_pVCB->fatStart);
-    if(result != global_pVCB->fatNumBlocks)
-    {
-        return -1;
-    }
-    return 0;
-}
-
 int resizeBlocks(uint32_t startBlock, uint32_t newSize) {
-
     // ensure that fat is initialized (mounted)
     if (global_pVCB == NULL || fat == NULL) {
         return -1;
@@ -314,7 +241,6 @@ int resizeBlocks(uint32_t startBlock, uint32_t newSize) {
     }
 
     uint32_t newSizeBlocks = (newSize + global_pVCB->blockSize - 1) / global_pVCB->blockSize;
-    printf("new size in blocks is %d\n", newSizeBlocks);
 
     uint32_t currentBlock = startBlock;
     //iterate through the FAT with the start block until we hit EOF or size
@@ -331,7 +257,6 @@ int resizeBlocks(uint32_t startBlock, uint32_t newSize) {
         currentBlock = fat[currentBlock];
     }
 
-    printf("got past the loop; calling freeBlocks\n");
     //if we hit size first, call freeBlocks on the next block after size and update the EOF sentinel
     freeBlocks(fat[currentBlock]);
     fat[currentBlock] = FAT_EOF;

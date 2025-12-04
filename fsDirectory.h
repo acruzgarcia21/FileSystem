@@ -1,14 +1,15 @@
 /**************************************************************
 * Class::  CSC-415-02 Fall 2025
-* Name:: Alejandro Cruz-Garcia, Ronin Lombardino
-* Student IDs:: 923799497, 924363164
+* Name:: Alejandro Cruz-Garcia, Ronin Lombardino, Evan Caplinger, Alex Tamayo
+* Student IDs:: 923799497, 924363164, 924990024, 921199718
 * GitHub-Name:: RookAteMySSD
 * Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System
 *
 * File:: fsDirectory.h
 *
-* Description:: Directory struct and function declarations
+* Description:: Functions that manipulate directories, including
+*               file creation, removal, cwd stuff, etc.
 *
 **************************************************************/
 
@@ -68,22 +69,35 @@ DE* loadDirectory(uint32_t startBlock, uint32_t size, uint32_t blockSize);
 
 // Added by Alex Tamayo 11/6/2025 @ 6pm
 // parse path and navigate to parent
-int ParsePath(const char* path, ppinfo* ppi);
+int parsePath(const char* path, ppinfo* ppi);
 
-// helper functions used by ParsePath
+// helper functions used by parsePath
 int findInDirectory(DE* dir, int entryCount, const char* name);
 int isDEaDir(DE* entry);
 
 // cwd functions
+// build the string that represents the CWD absolute path
 char* cwdBuildAbsPath();
+
+// return a directory entry for the CWD
 DE* getcwdInternal();
+
+// internal function used to set CWD; called by fs_setcwd
 int setcwdInternal(const char* path);
+
+// initialize the CWD system
 int initCwdAtRoot();
+
+// free all allocated memory for CWD
 void freeCwdMemory();
 
-// temporary directory functions
+// reload the CWD to get new changes - size, etc. (just change to parent and back)
+int reloadCwd();
+
+// add a new entry to a directory
 int addEntryToDirectory(DE* parent, DE* newEntry);
-int removeEntryFromDirectory(DE* parent, const char* entryName);
+
+// int removeEntryFromDirectory(DE* parent, const char* entryName);
 int isDirectoryEmpty(DE* dir, uint32_t entryIdx);
 
 #endif

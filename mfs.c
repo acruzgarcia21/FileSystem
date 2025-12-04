@@ -1,7 +1,7 @@
 /**************************************************************
-* Class::  CSC-415-02 Spring 2024
-* Name:: Ronin Lombardino, Alexander Tamayo
-* Student IDs:: 924363164, 921199718
+* Class::  CSC-415-02 Fall 2025
+* Name:: Alejandro Cruz-Garcia, Ronin Lombardino, Evan Caplinger, Alex Tamayo
+* Student IDs:: 923799497, 924363164, 924990024, 921199718
 * GitHub-Name:: RookAteMySSD
 * Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System
@@ -37,26 +37,34 @@ int fs_mkdir(const char *pathname, mode_t mode) {
         return -1;
     }
     
-    vcb* pVCB = _getGlobalVCB();
+    vcb* pVCB = getGlobalVCB();
     ppinfo ppi;
     
     // parse path and navigate to parent
-    int result = ParsePath(pathname, &ppi);
+    int result = parsePath(pathname, &ppi);
     
     if (result == -1) {
+        printf("Could not parse path.\n");
         errno = EIO;
         return -1;
     }
     
     if (result == -2) {
         // parent path doesn't exist
+        printf("Parent path doesn't exist.\n");
         errno = ENOENT;
         return -1;
     }
     
     if (result == -3) {
         // parent path contains non-directory
+        printf("Parent path contains non-directory.\n");
         errno = ENOTDIR;
+        return -1;
+    }
+
+    if (ppi.index != -1) {
+        printf("Directory already exists.\n");
         return -1;
     }
     
@@ -121,34 +129,38 @@ int fs_mkdir(const char *pathname, mode_t mode) {
         freeBlocks(newEntry.location);
         return -1;
     }
+
+    // reload cwd so that we have a clean copy
+    if (reloadCwd() != 0) {
+        printf("Could not reload cwd.\n");
+        return -1;
+    }
     
     return 0;
 }
 // ==================== DIRECTORY REMOVAL ====================
 
 int fs_rmdir(const char *pathname) {
-    printf("started rmdir\n");
-
     if (!pathname || strlen(pathname) == 0) {
-        printf("pathname was like nothing\n");
+        printf("Pathname was empty.\n");
         errno = EINVAL;
         return -1;
     }
     
     if (strcmp(pathname, "/") == 0) {
-        printf("pathname was root\n");
+        printf("Cannot remove root directory.\n");
         errno = EBUSY;
         return -1;
     }
     
-    vcb* pVCB = _getGlobalVCB();
+    vcb* pVCB = getGlobalVCB();
     DE* cwd = getcwdInternal();
     ppinfo ppi;
     
-    int result = ParsePath(pathname, &ppi);
+    int result = parsePath(pathname, &ppi);
     
     if (result != 0) {
-        printf("couldn't parse path\n");
+        printf("Couldn't parse path.\n");
         errno = (result == -2) ? ENOENT : EIO;
         return -1;
     }
@@ -156,7 +168,7 @@ int fs_rmdir(const char *pathname) {
     // check for "." or ".."
     if (strcmp(ppi.lastElementName, ".") == 0 || 
         strcmp(ppi.lastElementName, "..") == 0) {
-        printf("invalid path\n");
+        printf("Invalid path.\n");
         free(ppi.parent);
         free(ppi.lastElementName);
         errno = EINVAL;
@@ -165,7 +177,7 @@ int fs_rmdir(const char *pathname) {
     
     // must exist
     if (ppi.index == -1) {
-        printf("does not exist\n");
+        printf("Directory does not exist.\n");
         free(ppi.parent);
         free(ppi.lastElementName);
         errno = ENOENT;
@@ -176,7 +188,7 @@ int fs_rmdir(const char *pathname) {
     
     // must be a directory
     if (!isDEaDir(targetEntry)) {
-        printf("not dir\n");
+        printf("Cannot remove non-directory with rmdir.\n");
         free(ppi.parent);
         free(ppi.lastElementName);
         errno = ENOTDIR;
@@ -185,7 +197,7 @@ int fs_rmdir(const char *pathname) {
     
     // can't be CWD
     if (targetEntry->location == cwd->location) {
-        printf("is cwd\n");
+        printf("Cannot remove current working directory.\n");
         free(ppi.parent);
         free(ppi.lastElementName);
         errno = EBUSY;
@@ -195,7 +207,7 @@ int fs_rmdir(const char *pathname) {
     // load target to check if empty
     DE* targetDir = loadDirectory(targetEntry->location, targetEntry->size, pVCB->blockSize);
     if (!targetDir) {
-        printf("couldn't load\n");
+        printf("Could not load directory.\n");
         free(ppi.parent);
         free(ppi.lastElementName);
         errno = EIO;
@@ -204,7 +216,7 @@ int fs_rmdir(const char *pathname) {
     
     int targetEntryCount = targetEntry->size / sizeof(DE);
     if (!isDirectoryEmpty(targetDir, targetEntryCount)) {
-        printf("wasn't empty\n");
+        printf("Cannot remove a non-empty directory.\n");
         free(targetDir);
         free(ppi.parent);
         free(ppi.lastElementName);
@@ -218,20 +230,33 @@ int fs_rmdir(const char *pathname) {
     // Remove from parent
     uint32_t parentLocation = ppi.parent[0].location;
     uint32_t parentSize = ppi.parent[0].size;
+
+    // set flag to free DE
+    ppi.parent[ppi.index].flags &= ~DE_IS_USED;
     
-    if (removeEntryFromDirectory(ppi.parent, ppi.lastElementName) != 0) {
-        printf("couldn't remove\n");
+    // write directory back to disk
+    int blocksToWrite = (ppi.parent[0].size + pVCB->blockSize - 1) / pVCB->blockSize;
+    int r = writeBlocksToDisk((char *)ppi.parent,
+                                ppi.parent[0].location,
+                                blocksToWrite);
+    if (r < 0) {
         free(ppi.parent);
-        free(ppi.lastElementName);
         return -1;
     }
     
+    // free allocated memory
     free(ppi.parent);
     free(ppi.lastElementName);
     
     // Free blocks
     if (freeBlocks(locationToFree) != 0) {
         errno = EIO;
+        return -1;
+    }
+
+    // reload cwd so that we have a clean copy
+    if (reloadCwd() != 0) {
+        printf("Could not reload cwd.\n");
         return -1;
     }
     
@@ -247,7 +272,7 @@ fdDir * fs_opendir(const char *pathname) {
     }
 
     ppinfo ppi;
-    int result = ParsePath(pathname, &ppi);
+    int result = parsePath(pathname, &ppi);
 
     if (result < 0) {
         return NULL;
@@ -261,7 +286,7 @@ fdDir * fs_opendir(const char *pathname) {
         return NULL;
     }
 
-    vcb* pVCB =_getGlobalVCB();
+    vcb* pVCB =getGlobalVCB();
     if(!pVCB)
     {
         free(dirInfo);
@@ -347,10 +372,15 @@ struct fs_diriteminfo *fs_readdir(fdDir *dirp) {
     
     //get the current directory entry
     do {
+        // if we have iterated beyond the end of the directory, return NULL
+        if (dirp->dirEntryPosition == dirp->d_reclen) {
+            return NULL;
+        }
+
+        // go to the next entry
         currentEntry = dirp->directory[dirp->dirEntryPosition];
         dirp->dirEntryPosition++;
-    } while (!(currentEntry.flags & DE_IS_USED) 
-                && dirp->dirEntryPosition < dirp->d_reclen);
+    } while (!(currentEntry.flags & DE_IS_USED));
 
     //populate the fs_diriteminfo struct
     struct fs_diriteminfo * diritem =  dirp->di; //refrence ptr
@@ -390,7 +420,7 @@ int fs_isFile(char* path)
     if (!path) return 0;
 
     ppinfo ppi = {0};
-    int r = ParsePath(path, &ppi);
+    int r = parsePath(path, &ppi);
     if (r != 0) {
         return 0;
     }
@@ -414,7 +444,7 @@ int fs_isDir(char* path)
     if (!path) return 0;
 
     ppinfo ppi = {0};
-    int r = ParsePath(path, &ppi);
+    int r = parsePath(path, &ppi);
     if (r != 0) return 0; // Not a dir / not found
 
     int result = 0;
@@ -441,93 +471,37 @@ int fs_delete(char* filename)
     if(!filename || strlen(filename) == 0) return -1;
 
     // Load VCB
-    vcb* vcb = _getGlobalVCB();
+    vcb* vcb = getGlobalVCB();
     if(!vcb) return -1;
 
-    // Load root directory
-    DE* currentDirectory = loadDirectory(vcb->rootStart, vcb->rootSize, vcb->blockSize);
-    if(!currentDirectory) return -1;
-
-    // Track the parent directory's size so we know how many entries to scan
-    uint32_t parentSize  = vcb->rootSize; 
-    uint32_t parentStart = vcb->rootStart;
-
-    // Skip any leading slashes
-    while (*filename == '/') filename++;
-    
-    DE* parentDir   = currentDirectory; // Directory that contains the target
-    DE* parentEntry = NULL;             // The DE of the parent dir (within its parent)
-    DE* entry       = NULL;
-
-    // Tokenise path
-    char* token = strtok(filename, "/");
-
-    // Traverse path until the target file is found
-    while(token)
-    {
-        int entryCount = (int)(parentSize / sizeof(DE));
-        entry = findEntryInDirectory(parentDir, entryCount, token);
-        if(!entry)
-        {
-            free(parentDir);
-            parentDir = NULL;
-            return -1;
-        }
-
-        char* next = strtok(NULL, "/");
-        if(next)
-        {
-            // Must be a directory if we have more tokens to walk through
-            if(!(entry->flags & DE_IS_DIR))
-            {
-                free(parentDir);
-                parentDir = NULL;
-                return -1;
-            }
-
-            // Load next directory in chain
-            DE* nextDir = loadDirectory(entry->location, entry->size, vcb->blockSize);
-            if(!nextDir)
-            {
-                free(parentDir);
-                parentDir = NULL;
-                return -1;
-            }
-
-            free(parentDir);
-            parentDir   = nextDir;
-            parentEntry = entry;
-            parentStart = entry->location;
-            parentSize  = entry->size;
-
-            token = next;
-        } 
-        else
-        {
-            break;
-        }
+    ppinfo ppi;
+    int r = parsePath(filename, &ppi);
+    if (r != 0) {
+        return -1;
     }
+
+    DE* entry = &ppi.parent[ppi.index];
 
     // Safety check: ensure entry exists
     if(!entry)
     {
-        free(parentDir);
-        parentDir = NULL;
+        free(ppi.parent);
+        ppi.parent = NULL;
         return -1;
     }
     // Prevent deletion of '.' or '..'
     if (strcmp(entry->name, ".") == 0 || strcmp(entry->name,  "..") == 0)
     {
-        free(parentDir);
-        parentDir = NULL;
+        free(ppi.parent);
+        ppi.parent = NULL;
         return -1;
     }
 
     // Validate that this is an existing file, not a directory
     if(!entry || !(entry->flags & DE_IS_USED) || (entry->flags & DE_IS_DIR))
     {
-        free(parentDir);
-        parentDir = NULL;
+        free(ppi.parent);
+        ppi.parent = NULL;
         return -1;
     }
 
@@ -544,21 +518,27 @@ int fs_delete(char* filename)
     entry->modified = 0;
 
     // Write parent directory back to disk
-    int blocksToWrite = (int)((parentSize + vcb->blockSize - 1) / vcb->blockSize);
-    int wrote = writeBlocksToDisk((char*)parentDir, parentStart, blocksToWrite);
+    int blocksToWrite = (int)((ppi.parent[0].size + vcb->blockSize - 1) / vcb->blockSize);
+    int wrote = writeBlocksToDisk((char*)ppi.parent, ppi.parent[0].location, blocksToWrite);
 
     // Verify the write completed fully
     if(wrote != blocksToWrite)
     {
         printf("fs_delete: failed to write directory back to disk (wrote %d of %d)\n", wrote, blocksToWrite);
-        free(parentDir);
-        parentDir = NULL;
+        free(ppi.parent);
+        ppi.parent = NULL;
+        return -1;
+    }
+
+    // reload cwd so that we have a clean copy
+    if (reloadCwd() != 0) {
+        printf("could not reload cwd\n");
         return -1;
     }
 
     // Cleanup and exit
-    free(parentDir);
-    parentDir = NULL;
+    free(ppi.parent);
+    ppi.parent = NULL;
     return 0;
 }
 
@@ -567,15 +547,19 @@ int fs_setcwd(char *pathname) {
 }
 
 char * fs_getcwd(char *pathname, size_t size) {
+    // call internal function to build path
     char* absPath = cwdBuildAbsPath();
     if (absPath == NULL) {
         return NULL;
     }
 
+    // if user has asked for a size that is too short, give them nothing
     if (strlen(absPath) > size) {
+        free(absPath);
         return NULL;
     }
 
+    // copy to user buffer
     strncpy(pathname, absPath, size);
     free(absPath);
     return pathname;
@@ -585,11 +569,11 @@ int fs_stat(const char *path, struct fs_stat *buf)
 {
     if (!path || !buf) return -1;
 
-    vcb* pVCB = _getGlobalVCB();
+    vcb* pVCB = getGlobalVCB();
     if(!pVCB) return -1;
 
     ppinfo ppi = {0};
-    int r = ParsePath(path, &ppi);
+    int r = parsePath(path, &ppi);
     if (r != 0) {
         return -1;
     }
