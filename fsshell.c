@@ -357,85 +357,583 @@ int cmd_cp (int argcnt, char *argvec[])
 	}
 	
 /****************************************************
-*  Move file commmand
+*  Move file commmand & helper functions
+****************************************************/
+
+/**
+ * extract the final component of a path
+ */
+static void extractFileName(const char* path, char* outName) {
+    if (!path || !outName) return;
+    
+    // Find the last '/' in the path
+    const char* lastSlash = strrchr(path, '/');
+    if (!lastSlash) {
+        // No slash found - path is just a filename
+        strcpy(outName, path);
+    } else {
+        // Copy everything after the last slash
+        strcpy(outName, lastSlash + 1);
+    }
+}
+
+/**
+ * read the size of a directory from its "." entry
+ */
+static uint32_t getDirectorySize(uint32_t dirLoc) {
+    vcb* pVCB = _getGlobalVCB();
+    
+    // Allocate space for one block
+    DE* firstBlock = malloc(pVCB->blockSize);
+    if (!firstBlock) return 0;
+    
+    // Read the first block which contains the "." entry
+    if (LBAread(firstBlock, 1, dirLoc) != 1) {
+        free(firstBlock);
+        return 0;
+    }
+    
+    // The "." entry is always at index 0
+    uint32_t size = firstBlock[0].size;
+    free(firstBlock);
+    return size;
+}
+
+/**
+ * remove an entry from parent WITHOUT freeing its blocks
+ */
+static int detachEntry(DE* parent, const char* name, DE* outEntry) {
+    if (!parent || !name) return -1;
+    
+    vcb* pVCB = _getGlobalVCB();
+    int entryCount = parent[0].size / sizeof(DE);
+    
+    // find the entry by name
+    int foundIndex = -1;
+    for (int i = 0; i < entryCount; i++) {
+        if ((parent[i].flags & DE_IS_USED) && 
+            strcmp(parent[i].name, name) == 0) {
+            foundIndex = i;
+            break;
+        }
+    }
+    
+    if (foundIndex == -1) return -1;  // Entry not found
+    
+    // save a copy of the entry if requested (for later attachment)
+    if (outEntry) {
+        memcpy(outEntry, &parent[foundIndex], sizeof(DE));
+    }
+    
+    // mark the entry as unused but don't free its blocks
+    parent[foundIndex].flags = 0;
+    parent[foundIndex].name[0] = '\0';
+    parent[0].modified = getCurrentTime();
+    
+    // write the updated parent directory back to disk
+    uint32_t parentLoc = parent[0].location;
+    uint32_t parentSize = parent[0].size;
+    int blocksWritten = writeBlocksToDisk((char*)parent, parentLoc,
+                                          (parentSize + pVCB->blockSize - 1) / pVCB->blockSize);
+    
+    return (blocksWritten <= 0) ? -1 : 0;
+}
+
+/**
+ * add an entry to a parent directory
+ */
+static int attachEntry(DE* parent, const char* name, DE* entry) {
+    if (!parent || !name || !entry) return -1;
+    
+    vcb* pVCB = _getGlobalVCB();
+    int entryCount = parent[0].size / sizeof(DE);
+    
+    // find an empty slot in the directory
+    int emptySlot = -1;
+    for (int i = 0; i < entryCount; i++) {
+        if (!(parent[i].flags & DE_IS_USED) || parent[i].name[0] == '\0') {
+            emptySlot = i;
+            break;
+        }
+    }
+    
+    if (emptySlot == -1) return -1;  // Directory is full
+    
+    // copy the entry into the empty slot
+    memcpy(&parent[emptySlot], entry, sizeof(DE));
+    
+    // set the name (allows renaming during move)
+    strcpy(parent[emptySlot].name, name);
+    
+    // Mark as used
+    parent[emptySlot].flags |= DE_IS_USED;
+    parent[0].modified = getCurrentTime();
+    
+    // write the updated parent directory back to disk
+    uint32_t parentLoc = parent[0].location;
+    uint32_t parentSize = parent[0].size;
+    int blocksWritten = writeBlocksToDisk((char*)parent, parentLoc,
+                                          (parentSize + pVCB->blockSize - 1) / pVCB->blockSize);
+    
+    return (blocksWritten <= 0) ? -1 : 0;
+}
+
+/**
+ * rename an entry within the same directory
+ */
+static int renameInPlace(DE* parent, const char* oldName, const char* newName) {
+    if (!parent || !oldName || !newName) return -1;
+    
+    vcb* pVCB = _getGlobalVCB();
+    int entryCount = parent[0].size / sizeof(DE);
+    
+    // find the entry by old name
+    int foundIndex = -1;
+    for (int i = 0; i < entryCount; i++) {
+        if ((parent[i].flags & DE_IS_USED) && 
+            strcmp(parent[i].name, oldName) == 0) {
+            foundIndex = i;
+            break;
+        }
+    }
+    
+    if (foundIndex == -1) return -1;  // Entry not found
+    
+    // simply change the name - everything else stays the same
+    strcpy(parent[foundIndex].name, newName);
+    parent[0].modified = getCurrentTime();
+    
+    // write the updated directory back to disk
+    uint32_t parentLoc = parent[0].location;
+    uint32_t parentSize = parent[0].size;
+    int blocksWritten = writeBlocksToDisk((char*)parent, parentLoc,
+                                          (parentSize + pVCB->blockSize - 1) / pVCB->blockSize);
+    
+    return (blocksWritten <= 0) ? -1 : 0;
+}
+
+/**
+ * update the ".." entry in a moved directory
+ */
+static int updateDotDot(uint32_t dirLoc, uint32_t dirSize, 
+                        uint32_t newParentLoc, uint32_t newParentSize) {
+    vcb* pVCB = _getGlobalVCB();
+    
+    // load the entire directory that was moved
+    DE* dir = loadDirectory(dirLoc, dirSize, pVCB->blockSize);
+    if (!dir) return -1;
+    
+    int entryCount = dirSize / sizeof(DE);
+    int dotdotIndex = -1;
+    
+    // find the ".." entry (should be at index 1, but search to be safe)
+    for (int i = 0; i < entryCount; i++) {
+        if ((dir[i].flags & DE_IS_USED) && strcmp(dir[i].name, "..") == 0) {
+            dotdotIndex = i;
+            break;
+        }
+    }
+    
+    if (dotdotIndex == -1) {
+        free(dir);
+        return -1;  // every directory should have ".."
+    }
+    
+    // update ".." to point to the new parent
+    dir[dotdotIndex].location = newParentLoc;
+    dir[dotdotIndex].size = newParentSize;
+    
+    // write the updated directory back to disk
+    int blocksWritten = writeBlocksToDisk((char*)dir, dirLoc,
+                                          (dirSize + pVCB->blockSize - 1) / pVCB->blockSize);
+    free(dir);
+    
+    return (blocksWritten <= 0) ? -1 : 0;
+}
+
+/**
+ * check if one directory is an ancestor of another
+ */
+static int isAncestorOf(uint32_t potentialAncestorLoc, uint32_t targetLoc) {
+    vcb* pVCB = _getGlobalVCB();
+    
+    // check if they're the same, it's not an ancestor relationship
+    if (potentialAncestorLoc == targetLoc) return 0;
+    
+    uint32_t currentLoc = targetLoc;
+    uint32_t rootLoc = pVCB->rootStart;
+    int maxIterations = 100;  // prevent infinite loops
+    int iterations = 0;
+    
+    // move up the directory tree using ".." entries
+    while (currentLoc != rootLoc && iterations < maxIterations) {
+        iterations++;
+        
+        // get the size of the current directory
+        uint32_t currentSize = getDirectorySize(currentLoc);
+        if (currentSize == 0) return -1;  // error reading directory
+        
+        // load the current directory
+        DE* currentDir = loadDirectory(currentLoc, currentSize, pVCB->blockSize);
+        if (!currentDir) return -1;
+        
+        int entryCount = currentSize / sizeof(DE);
+        int dotdotIndex = -1;
+        
+        // find the ".." entry to get parent location
+        for (int i = 0; i < entryCount; i++) {
+            if ((currentDir[i].flags & DE_IS_USED) && 
+                strcmp(currentDir[i].name, "..") == 0) {
+                dotdotIndex = i;
+                break;
+            }
+        }
+        
+        if (dotdotIndex == -1) {
+            free(currentDir);
+            return -1;  // every directory should have ".."
+        }
+        
+        // get parent location from ".."
+        uint32_t parentLoc = currentDir[dotdotIndex].location;
+        free(currentDir);
+        
+        // check if this parent is the potential ancestor
+        if (parentLoc == potentialAncestorLoc) return 1;  // Found it!
+        
+        // move up to parent and continue
+        currentLoc = parentLoc;
+    }
+    
+    // reached root without finding the ancestor
+    return 0;
+}
+
+/**
+ * remove an entry and free its blocks
+ */
+static int deleteEntry(DE* parent, const char* name) {
+    if (!parent || !name) return -1;
+    
+    vcb* pVCB = _getGlobalVCB();
+    int entryCount = parent[0].size / sizeof(DE);
+    
+    // find the entry to delete
+    int foundIndex = -1;
+    for (int i = 0; i < entryCount; i++) {
+        if ((parent[i].flags & DE_IS_USED) && 
+            strcmp(parent[i].name, name) == 0) {
+            foundIndex = i;
+            break;
+        }
+    }
+    
+    if (foundIndex == -1) return -1;  // entry not found
+    
+    // save the block location before clearing the entry
+    uint32_t locationToFree = parent[foundIndex].location;
+    
+    // mark entry as unused
+    parent[foundIndex].flags = 0;
+    parent[foundIndex].name[0] = '\0';
+    parent[0].modified = getCurrentTime();
+    
+    // write the updated parent directory back to disk
+    uint32_t parentLoc = parent[0].location;
+    uint32_t parentSize = parent[0].size;
+    int blocksWritten = writeBlocksToDisk((char*)parent, parentLoc,
+                                          (parentSize + pVCB->blockSize - 1) / pVCB->blockSize);
+    
+    if (blocksWritten <= 0) return -1;
+    
+    // free the blocks (but only if valid location)
+    // empty files created with touch have location=0 and no blocks to free
+    if (locationToFree != 0 && 
+        locationToFree != FAT_EOF && 
+        locationToFree != FAT_RESERVED) {
+        freeBlocks(locationToFree);
+    }
+    
+    return 0;
+}
+
+/****************************************************
+*  Move file command Main Implementation
 ****************************************************/
 int cmd_mv (int argcnt, char *argvec[])
-	{
+{
 #if (CMDMV_ON == 1)	
-	// **** TODO ****  For you to implement	
+    // STEP 1: Validate Arguments 
+    if (argcnt != 3) {
+        printf("Usage: mv source destination\n");
+        return -1;
+    }
 
-	if (argcnt != 3)
-	{
-		printf("Usage: mv srcfile destfile\n");
-		return -1;
-	}
+    char* source = argvec[1];
+    char* dest = argvec[2];
 
-	char* src = argvec[1];
-	char* dest = argvec[2];
+    // check for NULL or empty strings
+    if (!source || !dest || strlen(source) == 0 || strlen(dest) == 0) {
+        printf("mv: invalid arguments\n");
+        return -1;
+    }
 
-	if (fs_isDir(src))
-	{
-		printf("(mv): Moving directories is not supported (src is a directory)\n");
-		return -1;
-	}
+    // STEP 2: reject special directories
+    // cannot move ".", "..", or root 
+    char sourceFileName[DE_NAME_MAX];
+    extractFileName(source, sourceFileName);
+    
+    if (strcmp(sourceFileName, ".") == 0 || 
+        strcmp(sourceFileName, "..") == 0 ||
+        strcmp(source, "/") == 0) {
+        printf("mv: cannot move '%s'\n", source);
+        return -1;
+    }
 
-	if(!fs_isFile(src))
-	{
-		printf("(mv): %s is not a regular file\n", src);
-		return -1;
-	}
+    vcb* pVCB = _getGlobalVCB();
 
-	// Open source for read
-	int src_fd = b_open(src, O_RDONLY);
-	if (src_fd < 0)
-	{
-		printf("(mv): failed to open source %s\n", src);
-		return src_fd;
-	}
+    // STEP 3: Parse Source Path 
+    ppinfo sourcePPI;
+    if (parsePath(source, &sourcePPI) != 0 || sourcePPI.index == -1) {
+        printf("mv: cannot stat '%s': No such file or directory\n", source);
+        return -1;
+    }
 
-	// Open source for read
-	int dest_fd = b_open(dest, O_WRONLY | O_CREAT | O_TRUNC);
-	if (dest_fd < 0)
-	{
-		printf("(mv): failed to open dest %s\n", dest);
-		b_close(src_fd);
-		return dest_fd;
-	}
+    // save source information
+    DE sourceEntry;
+    memcpy(&sourceEntry, &sourcePPI.parent[sourcePPI.index], sizeof(DE));
+    DE* sourceParent = sourcePPI.parent;  // directory containing source
+    char* sourceName = sourcePPI.lastElementName;  // name of source file/dir
 
-	char buf[BUFFERLEN];
-	int readcnt;
+    // STEP 4: parse destination path 
+    ppinfo destPPI;
+    int destResult = parsePath(dest, &destPPI);
+    
+    // destResult == -2 means parent directory doesn't exist
+    if (destResult == -2) {
+        free(sourceParent);
+        free(sourceName);
+        printf("mv: cannot move '%s' to '%s': No such file or directory\n", source, dest);
+        return -1;
+    }
 
-	// Copy loop (same pattern as cp)
-	do
-	{
-		readcnt = b_read(src_fd, buf, BUFFERLEN);
-		if (readcnt > 0)
-		{
-			int wrote = b_write(dest_fd, buf, readcnt);
-			if (wrote < readcnt)
-			{
-				printf("(mv): short write\n");
-				b_close(src_fd);
-				b_close(dest_fd);
-				return -1;
-			}
-		}
-	} while (readcnt == BUFFERLEN);
+    // determine if destination exists and if it's a directory
+    int destExists = (destResult == 0 && destPPI.index != -1);
+    int destIsDir = destExists && (destPPI.parent[destPPI.index].flags & DE_IS_DIR);
+    
+    DE* destParent = destPPI.parent;  // directory containing destination
+    char* destName = destPPI.lastElementName;  // name of destination
 
-	b_close(src_fd);
-	b_close(dest_fd);	
+    // STEP 5: check for self move
+    if (destExists && !destIsDir &&
+        sourceParent[0].location == destParent[0].location &&
+        strcmp(sourceName, destName) == 0) {
 
-	// Delete the original
-	int del = fs_delete(src);
-	if (del != 0)
-	{
-		printf("(mv): warning: copied to %s but could not remove source %s\n", dest, src);
-		return del;
-	}
+        free(sourceParent);
+        free(destParent);
+        free(sourceName);
+        free(destName);
+        return 0;  // nothing to do
+    }
 
+    // STEP 6: handle move into directory
+    if (destIsDir) {
+        uint32_t finalDestLoc = destPPI.parent[destPPI.index].location;
+        uint32_t finalDestSize = destPPI.parent[destPPI.index].size;
+
+        // check for directory loops (can't move dir into its own subdirectory)
+        if (sourceEntry.flags & DE_IS_DIR) {
+            if (sourceEntry.location == finalDestLoc ||
+                isAncestorOf(sourceEntry.location, finalDestLoc) == 1) {
+                free(sourceParent);
+                free(destParent);
+                free(sourceName);
+                free(destName);
+                printf("mv: cannot move a directory into itself\n");
+                return -1;
+            }
+        }
+
+        // Load the destination directory
+        DE* finalDestDir = loadDirectory(finalDestLoc, finalDestSize, pVCB->blockSize);
+        if (!finalDestDir) {
+            free(sourceParent);
+            free(destParent);
+            free(sourceName);
+            free(destName);
+            printf("mv: cannot access destination directory\n");
+            return -1;
+        }
+
+        // Check if an entry with source's name already exists in destination
+        int finalDestEntryCount = finalDestSize / sizeof(DE);
+        DE* existingEntry = findEntryInDirectory(finalDestDir, finalDestEntryCount, sourceName);
+
+        if (existingEntry) {
+            if (existingEntry->flags & DE_IS_DIR) {
+                // Can't overwrite a directory
+                free(finalDestDir);
+                free(sourceParent);
+                free(destParent);
+                free(sourceName);
+                free(destName);
+                printf("mv: cannot overwrite directory\n");
+                return -1;
+            } else {
+                // Overwrite the existing file
+                deleteEntry(finalDestDir, sourceName);
+                free(finalDestDir);
+                // Reload after deletion
+                finalDestDir = loadDirectory(finalDestLoc, finalDestSize, pVCB->blockSize);
+            }
+        }
+
+        // Perform the move: detach from source parent, attach to destination
+        DE entryToMove;
+        if (detachEntry(sourceParent, sourceName, &entryToMove) != 0) {
+            free(finalDestDir);
+            free(sourceParent);
+            free(destParent);
+            free(sourceName);
+            free(destName);
+            printf("mv: failed to detach source\n");
+            return -1;
+        }
+
+        if (attachEntry(finalDestDir, sourceName, &entryToMove) != 0) {
+            free(finalDestDir);
+            free(sourceParent);
+            free(destParent);
+            free(sourceName);
+            free(destName);
+            printf("mv: failed to attach to destination\n");
+            return -1;
+        }
+
+        // If we moved a directory, update its ".." entry to point to new parent
+        if (entryToMove.flags & DE_IS_DIR) {
+            updateDotDot(entryToMove.location, entryToMove.size,
+                       finalDestLoc, finalDestSize);
+        }
+
+        // Cleanup and success
+        free(finalDestDir);
+        free(sourceParent);
+        free(destParent);
+        free(sourceName);
+        free(destName);
+        return 0;
+    }
+
+    // STEP 7: Determine if Same or Different Directory 
+    // this affects how we handle the move
+    int sameDirectory = (sourceParent[0].location == destParent[0].location);
+
+    // STEP 8: Handle Overwriting Existing File 
+    if (destExists && !destIsDir) {
+        // IMPORTANT: Save parent info BEFORE any operations
+        // we'll need this for reloading after deletion
+        uint32_t destParentLoc = destParent[0].location;
+        uint32_t destParentSize = destParent[0].size;
+    
+        // delete the existing destination file
+        if (deleteEntry(destParent, destName) != 0) {
+            free(sourceParent);
+            free(destParent);
+            free(sourceName);
+            free(destName);
+            printf("mv: failed to overwrite destination\n");
+            return -1;
+        }
+
+        // reload destination parent (it was modified by deleteEntry)
+        free(destParent);
+        destParent = loadDirectory(destParentLoc, destParentSize, pVCB->blockSize);
+
+        if (!destParent) {
+            free(sourceParent);
+            free(sourceName);
+            free(destName);
+            printf("mv: failed to reload destination directory\n");
+            return -1;
+        }
+    
+        // if same directory, also reload source parent!
+        // both sourceParent and destParent pointed to the same directory in memory.
+        // after freeing and reloading destParent, sourceParent becomes a stale pointer.
+        // without this, we'd get duplicate entries.
+        if (sameDirectory) {
+            free(sourceParent);
+            sourceParent = loadDirectory(destParentLoc, destParentSize, pVCB->blockSize);
+
+            if (!sourceParent) {
+                free(destParent);
+                free(sourceName);
+                free(destName);
+                printf("mv: failed to reload source directory\n");
+                return -1;
+            }
+        }
+    }
+
+    // STEP 9: check directory loops
+    // prevent moving a directory into its own subdirectory
+    if (sourceEntry.flags & DE_IS_DIR) {
+        if (isAncestorOf(sourceEntry.location, destParent[0].location) == 1) {
+            free(sourceParent);
+            free(destParent);
+            free(sourceName);
+            free(destName);
+            printf("mv: cannot move directory into subdirectory of itself\n");
+            return -1;
+        }
+    }
+
+    // STEP 10: move
+    
+    if (sameDirectory) {
+        // rename in same directory
+        // ex: mv /dir/old /dir/new
+        // change the name, no need to move entry slots
+        if (renameInPlace(sourceParent, sourceName, destName) != 0) {
+            free(sourceParent);
+            free(destParent);
+            free(sourceName);
+            free(destName);
+            printf("mv: rename failed\n");
+            return -1;
+        }
+    } else {
+        // move to different directory
+        // ex: mv /dir1/file /dir2/newname
+        // detach from source parent, attach to destination parent
+        DE entryToMove;
+        if (detachEntry(sourceParent, sourceName, &entryToMove) != 0 ||
+            attachEntry(destParent, destName, &entryToMove) != 0) {
+            free(sourceParent);
+            free(destParent);
+            free(sourceName);
+            free(destName);
+            printf("mv: move failed\n");
+            return -1;
+        }
+
+        // if we moved a directory, update its ".." entry
+        if (entryToMove.flags & DE_IS_DIR) {
+            updateDotDot(entryToMove.location, entryToMove.size,
+                       destParent[0].location, destParent[0].size);
+        }
+    }
+    
+    // STEP 11: cleanup
+    free(sourceParent);
+    free(destParent);
+    free(sourceName);
+    free(destName);
 #endif
-	return 0;
-	}
+    return 0;
+}
+
 
 /****************************************************
 *  Make Directory commmand
