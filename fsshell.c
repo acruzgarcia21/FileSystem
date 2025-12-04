@@ -381,7 +381,7 @@ static void extractFileName(const char* path, char* outName) {
  * read the size of a directory from its "." entry
  */
 static uint32_t getDirectorySize(uint32_t dirLoc) {
-    vcb* pVCB = _getGlobalVCB();
+    vcb* pVCB = getGlobalVCB();
     
     // Allocate space for one block
     DE* firstBlock = malloc(pVCB->blockSize);
@@ -405,7 +405,7 @@ static uint32_t getDirectorySize(uint32_t dirLoc) {
 static int detachEntry(DE* parent, const char* name, DE* outEntry) {
     if (!parent || !name) return -1;
     
-    vcb* pVCB = _getGlobalVCB();
+    vcb* pVCB = getGlobalVCB();
     int entryCount = parent[0].size / sizeof(DE);
     
     // find the entry by name
@@ -445,7 +445,7 @@ static int detachEntry(DE* parent, const char* name, DE* outEntry) {
 static int attachEntry(DE* parent, const char* name, DE* entry) {
     if (!parent || !name || !entry) return -1;
     
-    vcb* pVCB = _getGlobalVCB();
+    vcb* pVCB = getGlobalVCB();
     int entryCount = parent[0].size / sizeof(DE);
     
     // find an empty slot in the directory
@@ -484,7 +484,7 @@ static int attachEntry(DE* parent, const char* name, DE* entry) {
 static int renameInPlace(DE* parent, const char* oldName, const char* newName) {
     if (!parent || !oldName || !newName) return -1;
     
-    vcb* pVCB = _getGlobalVCB();
+    vcb* pVCB = getGlobalVCB();
     int entryCount = parent[0].size / sizeof(DE);
     
     // find the entry by old name
@@ -517,7 +517,7 @@ static int renameInPlace(DE* parent, const char* oldName, const char* newName) {
  */
 static int updateDotDot(uint32_t dirLoc, uint32_t dirSize, 
                         uint32_t newParentLoc, uint32_t newParentSize) {
-    vcb* pVCB = _getGlobalVCB();
+    vcb* pVCB = getGlobalVCB();
     
     // load the entire directory that was moved
     DE* dir = loadDirectory(dirLoc, dirSize, pVCB->blockSize);
@@ -555,7 +555,7 @@ static int updateDotDot(uint32_t dirLoc, uint32_t dirSize,
  * check if one directory is an ancestor of another
  */
 static int isAncestorOf(uint32_t potentialAncestorLoc, uint32_t targetLoc) {
-    vcb* pVCB = _getGlobalVCB();
+    vcb* pVCB = getGlobalVCB();
     
     // check if they're the same, it's not an ancestor relationship
     if (potentialAncestorLoc == targetLoc) return 0;
@@ -615,7 +615,7 @@ static int isAncestorOf(uint32_t potentialAncestorLoc, uint32_t targetLoc) {
 static int deleteEntry(DE* parent, const char* name) {
     if (!parent || !name) return -1;
     
-    vcb* pVCB = _getGlobalVCB();
+    vcb* pVCB = getGlobalVCB();
     int entryCount = parent[0].size / sizeof(DE);
     
     // find the entry to delete
@@ -690,7 +690,7 @@ int cmd_mv (int argcnt, char *argvec[])
         return -1;
     }
 
-    vcb* pVCB = _getGlobalVCB();
+    vcb* pVCB = getGlobalVCB();
 
     // STEP 3: Parse Source Path 
     ppinfo sourcePPI;
