@@ -1,7 +1,7 @@
 /**************************************************************
 * Class::  CSC-415-02 Fall 2025
-* Name:: Evan Caplinger, 
-* Student IDs:: 924990024, 
+* Name:: Alejandro Cruz-Garcia, Ronin Lombardino, Evan Caplinger, Alex Tamayo
+* Student IDs:: 923799497, 924363164, 924990024, 921199718
 * GitHub-Name:: RookAteMySSD
 * Group-Name:: Team #1 Victory Royal
 * Project:: Basic File System
@@ -21,10 +21,8 @@
 #define FS_VCB_MAGIC 0x8BADBEEF
 #define FS_ROOT_COUNT 51
 
-/* a point of concern: we have been using uint32_t (or unsigned int) for block
-addressing and block size, but in initFileSystem these are uint64_t. worth asking
-bierman? -erc */
 typedef struct {
+    // signature (should be magic word)
     uint32_t signature;
 
     // volume characteristics

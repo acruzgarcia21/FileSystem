@@ -82,7 +82,6 @@ int writeFileToDisk(char* data, DE* entry) {
 }
 
 int writeBlocksToDisk(char* data, uint32_t startBlock, uint32_t numBlocks) {
-
     // get global VCB
     vcb* globalVCB = getGlobalVCB();
     if (globalVCB == NULL) {
@@ -503,13 +502,13 @@ int saveCwdState() {
 }
 
 void restoreCwdState() {
-    // reset cwd stack
+    // free old (outdated) stack
     freeCwdStack(cwdStack);
 
+    // copy the copy of the old stack back to the current place
+    // do not free, since this will just be the new stack
     memcpy(&cwdStack[1], &cwdStackCopy[1], (MAX_PATH_DEPTH - 1) * sizeof(DE*));
     cwdLevel = cwdLevelCopy;
-
-    // freeCwdStack(cwdStackCopy);
 }
 
 char* cwdBuildAbsPath() {
@@ -836,8 +835,4 @@ int reloadCwd() {
     }
 
     return 0;
-}
-
-void uninitCwdSystem() {
-    freeCwdMemory();
 }
