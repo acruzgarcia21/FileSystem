@@ -278,7 +278,7 @@ fdDir * fs_opendir(const char *pathname) {
         return NULL;
     }
 
-    //create our struct
+    //create our struct that will be returned to the user
     fdDir* dirInfo = malloc(sizeof(fdDir));
     if (!dirInfo) {
         free(ppi.parent);
@@ -286,7 +286,8 @@ fdDir * fs_opendir(const char *pathname) {
         return NULL;
     }
 
-    vcb* pVCB =getGlobalVCB();
+    // get refs to objects that we will need (global VCB and loaded directory)
+    vcb* pVCB = getGlobalVCB();
     if(!pVCB)
     {
         free(dirInfo);
@@ -419,6 +420,7 @@ int fs_isFile(char* path)
 {
     if (!path) return 0;
 
+    // load the file in question
     ppinfo ppi = {0};
     int r = parsePath(path, &ppi);
     if (r != 0) {
@@ -427,12 +429,14 @@ int fs_isFile(char* path)
 
     int answer = 0;
 
+    // get a pointer to the DE and check the appropriate flags
     if (ppi.index >= 0)
     {
         DE* entry = &ppi.parent[ppi.index];
         answer = ((entry->flags & DE_IS_USED) && !(entry->flags & DE_IS_DIR)) ? 1 : 0;
     }
 
+    // release resources
     if(ppi.parent) free(ppi.parent);
     if(ppi.lastElementName) free(ppi.lastElementName);
 
@@ -443,12 +447,15 @@ int fs_isDir(char* path)
 {
     if (!path) return 0;
 
+    // parse the given path to get the file under consideration
     ppinfo ppi = {0};
     int r = parsePath(path, &ppi);
     if (r != 0) return 0; // Not a dir / not found
 
     int result = 0;
 
+    // if root, we know it's a directory; otherwise, check the DE under
+    // consideration for the right flags
     if (ppi.index >= 0)
     {
         DE* entry = &ppi.parent[ppi.index];
@@ -459,6 +466,7 @@ int fs_isDir(char* path)
         result = 1;
     }
 
+    // release resources
     if (ppi.parent) free(ppi.parent);
     if (ppi.lastElementName) free(ppi.lastElementName);
     
@@ -543,6 +551,7 @@ int fs_delete(char* filename)
 }
 
 int fs_setcwd(char *pathname) {
+    // this just wraps a call to a function in fsDirectory.c
     return setcwdInternal(pathname);
 }
 
@@ -567,11 +576,14 @@ char * fs_getcwd(char *pathname, size_t size) {
 
 int fs_stat(const char *path, struct fs_stat *buf) 
 {
+    // basic validation: inputs not null
     if (!path || !buf) return -1;
 
+    // get ref to our global vcb instance
     vcb* pVCB = getGlobalVCB();
     if(!pVCB) return -1;
 
+    // parse path to get ref to the file in question
     ppinfo ppi = {0};
     int r = parsePath(path, &ppi);
     if (r != 0) {
@@ -597,12 +609,14 @@ int fs_stat(const char *path, struct fs_stat *buf)
         return -1;
     }
 
+    // populate the struct that will be returned to user
     buf->st_size       = entry->size;
     buf->st_blocks     = (entry->size + pVCB->blockSize - 1) / pVCB->blockSize;
     buf->st_accesstime = entry->accessed;
     buf->st_modtime    = entry->modified;
     buf->st_createtime = entry->created;
 
+    // release resources
     if (ppi.parent) free(ppi.parent);
     if (ppi.lastElementName) free(ppi.lastElementName);
 
